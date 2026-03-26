@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title><%= project.name %> | Ops Dashboard</title>
+  <link rel="stylesheet" href="/public/style.css" />
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand__mark">OD</div>
+        <div>
+          <div class="eyebrow">Project Workspace</div>
+          <h1><a href="/">Ops Dashboard</a></h1>
+        </div>
+      </div>
+
+      <section class="sidebar-section sidebar-section--project">
+        <div class="sidebar-section__title">Current project</div>
+        <div class="project-summary">
+          <strong><%= project.name %></strong>
+          <span><%= project.status %> | <%= stats.sessionCount %> sessions | <%= stats.workflowCount %> workflows</span>
+          <span><%= formatRelativeTime(project.last_activity || project.created_at) %></span>
+          <% if (stats.importedFrom) { %>
+            <code><%= stats.importedFrom %></code>
+          <% } %>
+        </div>
+      </section>
+
+      <section class="sidebar-section">
+        <div class="sidebar-section__title">Projects</div>
+        <div class="project-list">
+          <% sidebarProjects.forEach(function(p) { %>
+            <a class="project-item <%= p.id === project.id ? 'project-item--active' : '' %>" href="/project/<%= p.id %>">
+              <span class="project-item__top">
+                <strong><%= p.name %></strong>
+                <span class="badge <%= p.id === project.id ? 'badge-accent' : 'badge-neutral' %>"><%= p.sectionLabel %></span>
+              </span>
+              <span class="project-item__sub"><%= p.status %> | <%= p.session_count %> sessions | <%= p.workflow_count %> workflows</span>
+              <span class="project-item__foot"><%= p.activityLabel %></span>
+            </a>
+          <% }) %>
+        </div>
+      </section>
+    </aside>
+
+    <main class="workspace">
+      <header class="topbar">
+        <div>
+          <div class="eyebrow">Project Detail</div>
+          <h1><%= project.name %></h1>
+          <p><%= project.description || 'No description yet.' %></p>
+          <div class="tag-row">
+            <% (project.tags || []).forEach(function(tag) { %>
+              <span class="chip"><%= tag %></span>
+            <% }) %>
+          </div>
+        </div>
+        <div class="topbar__meta">
+          <span class="chip chip-success"><%= project.status %></span>
+          <span class="chip"><%= stats.sessionCount %> sessions</span>
+          <span class="chip"><%= stats.workflowCount %> workflows</span>
+          <span class="chip"><%= stats.agentCount %> agents</span>
+        </div>
+      </header>
+
+      <nav class="tabs" aria-label="Project sections">
+        <a class="tab tab--active" href="#conversations">Conversations</a>
+        <a class="tab" href="#workflows">Workflows</a>
+        <a class="tab" href="#memory">Memory</a>
+        <a class="tab" href="#files">Files</a>
+        <a class="tab" href="#logs">Logs</a>
+        <a class="tab" href="#settings">Settings</a>
+      </nav>
+
+      <section class="grid grid--hero" id="overview">
+        <article class="card card--hero">
+          <div class="card__header">
+            <div>
+              <div class="eyebrow">Session</div>
+              <h2><%= currentSession ? currentSession.title : 'No session selected' %></h2>
+            </div>
+            <span class="badge badge-accent"><%= currentSession ? currentSession.state : 'idle' %></span>
+          </div>
+          <p class="lede">Use the chat panel to route a structured prompt through the selected agent and workflow.</p>
+
+          <div class="metric-grid metric-grid--compact">
+            <div class="metric">
+              <strong><%= stats.sessionCount %></strong>
+              <span>Sessions</span>
+            </div>
+            <div class="metric">
+              <strong><%= stats.workflowCount %></strong>
+              <span>Workflows</span>
+            </div>
+            <div class="metric">
+              <strong><%= stats.messageCount %></strong>
+              <span>Messages</span>
+            </div>
+            <div class="metric">
+              <strong><%= stats.artifactCount %></strong>
+              <span>Artifacts</span>
+            </div>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card__header">
+            <div>
+              <div class="eyebrow">Status Panel</div>
+              <h2>Operational snapshot</h2>
+            </div>
+          </div>
+          <dl class="status-list">
+            <div class="status-row">
+              <dt>Deployment status</dt>
+              <dd><%= project.status %></dd>
+            </div>
+            <div class="status-row">
+              <dt>Active session</dt>
+              <dd><%= currentSession ? currentSession.id : 'none yet' %></dd>
+            </div>
+            <div class="status-row">
+              <dt>Latest workflow</dt>
+              <dd><%= stats.latestWorkflow ? stats.latestWorkflow.name : 'none yet' %></dd>
+            </div>
+            <div class="status-row">
+              <dt>Recent activity</dt>
+              <dd><%= formatRelativeTime(project.last_activity || project.created_at) %></dd>
+            </div>
+            <div class="status-row">
+              <dt>Last log entry</dt>
+              <dd><%= stats.latestLog ? stats.latestLog.message : 'no logs yet' %></dd>
+            </div>
+          </dl>
+          <div class="state-chips">
+            <% if (Object.keys(stats.workflowStates).length) { %>
+              <% Object.entries(stats.workflowStates).forEach(function(entry) { %>
+                <span class="chip"><%= entry[0] %>: <%= entry[1] %></span>
+              <% }) %>
+            <% } %>
+          </div>
+        </article>
+      </section>
+
+      <section class="project-grid">
+        <div class="main-column">
+          <article class="card" id="conversations">
+            <div class="card__header">
+              <div>
+                <div class="eyebrow">Agent Chat</div>
+                <h2>Route a task</h2>
+              </div>
+              <span class="badge badge-neutral"><%= agents.length %> agents</span>
+            </div>
+
+            <form method="post" action="/api/project/<%= project.id %>/message" class="stack form-grid">
+              <div class="field">
+                <label for="session_id">Session</label>
+                <select id="session_id" name="session_id">
+                  <option value="">New session</option>
+                  <% project.sessions.forEach(function(session) { %>
+                    <option value="<%= session.id %>" <%= activeSession === session.id ? 'selected' : '' %>><%= session.title %> | <%= session.state %> | <%= session.id %></option>
+                  <% }) %>
+                </select>
+              </div>
+
+              <div class="field">
+                <label for="agent_id">Agent</label>
+                <select id="agent_id" name="agent_id">
+                  <option value="">(none/default)</option>
+                  <% agents.forEach(function(agent) { %>
+                    <option value="<%= agent.id %>"><%= agent.name %> | <%= agent.role %> | <%= agent.kind %></option>
+                  <% }) %>
+                </select>
+              </div>
+
+              <div class="field">
+                <label for="workflow_id">Workflow</label>
+                <select id="workflow_id" name="workflow_id">
+                  <option value="">(none)</option>
+                  <% project.workflows.forEach(function(workflow) { %>
+                    <option value="<%= workflow.id %>"><%= workflow.name %> | <%= workflow.state %></option>
+                  <% }) %>
+                </select>
+              </div>
+
+              <div class="field">
+                <label for="message_type">Message type</label>
+                <select id="message_type" name="message_type">
+                  <option>prompt</option>
+                  <option>continue</option>
+                  <option>summarise</option>
+                  <option>retry</option>
+                  <option>stop</option>
+                </select>
+              </div>
+
+              <div class="field">
+                <label for="priority">Priority</label>
+                <select id="priority" name="priority">
+                  <option>low</option>
+                  <option selected>normal</option>
+                  <option>high</option>
+                  <option>critical</option>
+                </select>
+              </div>
+
+              <div class="field field--full">
+                <label for="text">Text</label>
+                <textarea id="text" name="text" placeholder="Prompt text"></textarea>
+              </div>
+
+              <div class="field field--full">
+                <label for="payload_json">Structured JSON payload</label>
+                <textarea id="payload_json" name="payload_json" placeholder='{"task":"...","params":{}}'></textarea>
+              </div>
+
+              <div class="actions actions--chat">
+                <button type="submit" class="btn btn-primary">Run</button>
+                <button type="submit" name="message_type" value="continue" class="btn">Continue</button>
+                <button type="submit" name="message_type" value="summarise" class="btn">Summarise</button>
+                <button type="submit" name="message_type" value="retry" class="btn">Retry</button>
+                <button type="submit" name="message_type" value="stop" class="btn btn-danger">Stop</button>
+              </div>
+            </form>
+          </article>
+
+          <article class="card" id="conversations-history">
+            <div class="card__header">
+              <div>
+                <div class="eyebrow">Chat History</div>
+                <h2>Session timeline</h2>
+              </div>
+              <span class="badge badge-neutral"><%= messages.length %> messages</span>
+            </div>
+
+            <% if (messages.length) { %>
+              <div class="timeline">
+                <% messages.forEach(function(message) { %>
+                  <article class="timeline-item <%= message.direction === 'outbound' ? 'timeline-item--outbound' : 'timeline-item--inbound' %>">
+                    <div class="timeline-item__meta">
+                      <span class="timeline-item__role"><%= message.direction === 'outbound' ? 'Operator' : (message.agent_id || 'Agent') %></span>
+                      <span><%= message.message_type %></span>
+                      <span><%= message.priority %></span>
+                      <span><%= message.status %></span>
+                      <span><%= message.created_at %></span>
+                    </div>
+                    <div class="timeline-item__body"><%= message.content || '(empty)' %></div>
+                    <% if (message.error_text) { %>
+                      <div class="timeline-item__error"><%= message.error_text %></div>
+                    <% } %>
+                  </article>
+                <% }) %>
+              </div>
+            <% } else { %>
+              <div class="empty-state">
+                <strong>No messages yet.</strong>
+                <p>Pick a session and send the first prompt to seed the conversation history.</p>
+              </div>
+            <% } %>
+          </article>
+
+          <article class="card" id="workflows">
+            <div class="card__header">
+              <div>
+                <div class="eyebrow">Workflow Controls</div>
+                <h2>Run state and transitions</h2>
+              </div>
+            </div>
+
+            <form method="post" action="/api/project/<%= project.id %>/workflows" class="stack workflow-create">
+              <div class="field">
+                <label for="workflow_name">New workflow</label>
+                <input id="workflow_name" name="name" placeholder="Deployment task" required />
+              </div>
+              <div class="field">
+                <label for="workflow_kind">Kind</label>
+                <select id="workflow_kind" name="kind">
+                  <option>planning</option>
+                  <option>coding</option>
+                  <option>research</option>
+                  <option>debugging</option>
+                  <option>deployment</option>
+                  <option>review</option>
+                </select>
+              </div>
+              <div class="actions">
+                <button type="submit" class="btn btn-primary">Create workflow</button>
+              </div>
+            </form>
+
+            <% if (project.workflows.length) { %>
+              <div class="workflow-list">
+                <% project.workflows.forEach(function(workflow) { %>
+                  <div class="workflow-row">
+                    <div class="workflow-row__copy">
+                      <strong><%= workflow.name %></strong>
+                      <span><%= workflow.kind %> | <%= workflow.state %> | <%= workflow.last_event || 'no recent event' %></span>
+                    </div>
+                    <form method="post" action="/api/project/<%= project.id %>/workflows/<%= workflow.id %>/state" class="workflow-row__form">
+                      <select name="state">
+                        <option <%= workflow.state === 'idle' ? 'selected' : '' %>>idle</option>
+                        <option <%= workflow.state === 'running' ? 'selected' : '' %>>running</option>
+                        <option <%= workflow.state === 'paused' ? 'selected' : '' %>>paused</option>
+                        <option <%= workflow.state === 'done' ? 'selected' : '' %>>done</option>
+                      </select>
+                      <button type="submit" class="btn">Set</button>
+                    </form>
+                  </div>
+                <% }) %>
+              </div>
+            <% } else { %>
+              <div class="empty-state">
+                <strong>No workflows yet.</strong>
+                <p>Create one to track the next run and control state transitions from the dashboard.</p>
+              </div>
+            <% } %>
+          </article>
+        </div>
+
+        <aside class="side-column">
+          <article class="card" id="memory">
+            <div class="card__header">
+              <div>
+                <div class="eyebrow">Memory</div>
+                <h2>Project isolation</h2>
+              </div>
+            </div>
+            <div class="mono-block">
+              <div><span>Memory namespace</span><code><%= project.memory_namespace %></code></div>
+              <div><span>Workspace</span><code><%= project.workspace_dir %></code></div>
+              <div><span>Imported from</span><code><%= stats.importedFrom || 'local project' %></code></div>
+            </div>
+            <div class="bullet-stack">
+              <% planning.currentState.slice(0, 4).forEach(function(item) { %>
+                <div class="bullet-stack__item"><%= item %></div>
+              <% }) %>
+            </div>
+          </article>
+
+          <article class="card">
+            <div class="card__header">
+              <div>
+                <div class="eyebrow">Planning</div>
+                <h2>Active roadmap</h2>
+              </div>
+            </div>
+            <div class="task-list task-list--stacked">
+              <% planning.now.slice(0, 2).forEach(function(item) { %>
+                <div class="task-card task-card--muted">
+                  <strong><%= item.title %></strong>
+                  <ul>
+                    <% item.bullets.slice(0, 3).forEach(function(bullet) { %>
+                      <li><%= bullet %></li>
+                    <% }) %>
+                  </ul>
+                </div>
+              <% }) %>
+            </div>
+            <div class="bullet-stack bullet-stack--compact">
+              <% planning.health.slice(0, 4).forEach(function(item) { %>
+                <div class="bullet-stack__item"><%= item %></div>
+              <% }) %>
+            </div>
+          </article>
+
+          <article class="card" id="files">
+            <div class="card__header">
+              <div>
+                <div class="eyebrow">Files</div>
+                <h2>Artifacts</h2>
+              </div>
+              <span class="badge badge-neutral"><%= artifacts.length %> items</span>
+            </div>
+
+            <% if (artifacts.length) { %>
+              <div class="artifact-list">
+                <% artifacts.forEach(function(artifact) { %>
+                  <div class="artifact-item">
+                    <strong><%= artifact.name %></strong>
+                    <span><%= artifact.content_type %></span>
+                    <code><%= artifact.file_path %></code>
+                  </div>
+                <% }) %>
+              </div>
+            <% } else { %>
+              <div class="empty-state">
+                <strong>No artifacts yet.</strong>
+                <p>Files generated by workflows will appear here once the artifact browser is wired up.</p>
+              </div>
+            <% } %>
+          </article>
+
+          <article class="card" id="logs">
+            <div class="card__header">
+              <div>
+                <div class="eyebrow">Logs</div>
+                <h2>Recent events</h2>
+              </div>
+              <span class="badge badge-neutral"><%= logs.length %> entries</span>
+            </div>
+
+            <% if (logs.length) { %>
+              <div class="log-list">
+                <% logs.slice(0, 8).forEach(function(log) { %>
+                  <div class="log-item">
+                    <div class="log-item__head">
+                      <strong><%= log.level %></strong>
+                      <span><%= log.event_type %></span>
+                      <span><%= log.created_at %></span>
+                    </div>
+                    <div class="log-item__body">
+                      <%= log.message %>
+                    </div>
+                    <% if (Object.keys(log.details_json || {}).length) { %>
+                      <pre><%= JSON.stringify(log.details_json, null, 2) %></pre>
+                    <% } %>
+                  </div>
+                <% }) %>
+              </div>
+            <% } else { %>
+              <div class="empty-state">
+                <strong>No logs yet.</strong>
+                <p>Agent routing and workflow transitions will show up here once the project starts running.</p>
+              </div>
+            <% } %>
+          </article>
+
+          <article class="card" id="settings">
+            <div class="card__header">
+              <div>
+                <div class="eyebrow">Settings</div>
+                <h2>Project metadata</h2>
+              </div>
+            </div>
+            <div class="mono-block">
+              <div><span>Project id</span><code><%= project.id %></code></div>
+              <div><span>Created</span><code><%= project.created_at %></code></div>
+              <div><span>Last activity</span><code><%= formatRelativeTime(project.last_activity || project.created_at) %></code></div>
+            </div>
+            <div class="agent-grid agent-grid--compact">
+              <% project.agents.forEach(function(agent) { %>
+                <div class="agent-card">
+                  <strong><%= agent.name %></strong>
+                  <span><%= agent.role %></span>
+                  <span><%= agent.kind %></span>
+                </div>
+              <% }) %>
+            </div>
+          </article>
+        </aside>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

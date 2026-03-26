@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Ops Dashboard</title>
+  <link rel="stylesheet" href="/public/style.css" />
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand__mark">OD</div>
+        <div>
+          <div class="eyebrow">Operator Console</div>
+          <h1>Ops Dashboard</h1>
+        </div>
+      </div>
+
+      <form method="post" action="/api/projects/backfill" class="stack sidebar__cta">
+        <button type="submit" class="btn btn-primary btn-block">Back-fill from /home/tom/code</button>
+      </form>
+
+      <section class="sidebar-section">
+        <div class="sidebar-section__title">Projects</div>
+        <div class="project-list">
+          <% projectGroups.general.forEach(function(p) { %>
+            <a class="project-item" href="/project/<%= p.id %>">
+              <span class="project-item__top">
+                <strong><%= p.name %></strong>
+                <span class="badge badge-neutral"><%= p.sectionLabel %></span>
+              </span>
+              <span class="project-item__sub"><%= p.status %> | <%= p.session_count %> sessions | <%= p.workflow_count %> workflows</span>
+              <span class="project-item__foot"><%= p.activityLabel %></span>
+            </a>
+          <% }) %>
+        </div>
+      </section>
+
+      <section class="sidebar-section">
+        <div class="sidebar-section__title">Pave</div>
+        <div class="project-list">
+          <% projectGroups.pave.forEach(function(p) { %>
+            <a class="project-item" href="/project/<%= p.id %>">
+              <span class="project-item__top">
+                <strong><%= p.name %></strong>
+                <span class="badge badge-accent">Pave</span>
+              </span>
+              <span class="project-item__sub"><%= p.status %> | <%= p.session_count %> sessions | <%= p.workflow_count %> workflows</span>
+              <span class="project-item__foot"><%= p.activityLabel %></span>
+            </a>
+          <% }) %>
+        </div>
+      </section>
+
+      <section class="sidebar-section">
+        <div class="sidebar-section__title">sec06</div>
+        <div class="project-list">
+          <% projectGroups.sec06.forEach(function(p) { %>
+            <a class="project-item" href="/project/<%= p.id %>">
+              <span class="project-item__top">
+                <strong><%= p.name %></strong>
+                <span class="badge badge-neutral">sec06</span>
+              </span>
+              <span class="project-item__sub"><%= p.status %> | <%= p.session_count %> sessions | <%= p.workflow_count %> workflows</span>
+              <span class="project-item__foot"><%= p.activityLabel %></span>
+            </a>
+          <% }) %>
+        </div>
+      </section>
+
+      <section class="sidebar-section">
+        <div class="sidebar-section__title">Agents</div>
+        <div class="mini-list">
+          <% agents.forEach(function(agent) { %>
+            <div class="mini-list__item">
+              <strong><%= agent.name %></strong>
+              <span><%= agent.role %> | <%= agent.kind %></span>
+            </div>
+          <% }) %>
+        </div>
+      </section>
+    </aside>
+
+    <main class="workspace">
+      <header class="topbar">
+        <div>
+          <div class="eyebrow">Fleet Overview</div>
+          <h1>Multi-Agent Operations</h1>
+          <p>Project isolation, routing, and work tracking in one local control surface.</p>
+        </div>
+        <div class="topbar__meta">
+          <span class="chip chip-success"><%= dashboard.activeProjectCount %> active</span>
+          <span class="chip"><%= dashboard.projectCount %> projects</span>
+          <span class="chip"><%= dashboard.sessionCount %> sessions</span>
+          <span class="chip"><%= dashboard.workflowCount %> workflows</span>
+        </div>
+      </header>
+
+      <section class="grid grid--hero" id="overview">
+        <article class="card card--hero">
+          <div class="card__header">
+            <div>
+              <div class="eyebrow">Objective</div>
+              <h2><%= planning.objective %></h2>
+            </div>
+            <span class="badge badge-accent">NOW</span>
+          </div>
+          <p class="lede">The roadmap currently emphasizes local auth, bridge routing, and operator hardening.</p>
+
+          <div class="task-list">
+            <% planning.now.slice(0, 3).forEach(function(item) { %>
+              <div class="task-card">
+                <strong><%= item.title %></strong>
+                <ul>
+                  <% item.bullets.slice(0, 3).forEach(function(bullet) { %>
+                    <li><%= bullet %></li>
+                  <% }) %>
+                </ul>
+              </div>
+            <% }) %>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card__header">
+            <div>
+              <div class="eyebrow">Signal Summary</div>
+              <h2>Operational counts</h2>
+            </div>
+          </div>
+          <div class="metric-grid metric-grid--compact">
+            <div class="metric">
+              <strong><%= dashboard.projectCount %></strong>
+              <span>Projects</span>
+            </div>
+            <div class="metric">
+              <strong><%= dashboard.activeProjectCount %></strong>
+              <span>Active</span>
+            </div>
+            <div class="metric">
+              <strong><%= dashboard.sessionCount %></strong>
+              <span>Sessions</span>
+            </div>
+            <div class="metric">
+              <strong><%= dashboard.workflowCount %></strong>
+              <span>Workflows</span>
+            </div>
+            <div class="metric">
+              <strong><%= dashboard.agentCount %></strong>
+              <span>Agents</span>
+            </div>
+          </div>
+          <% if (featuredProject) { %>
+            <div class="featured-project">
+              <div class="featured-project__title">Featured project</div>
+              <strong><a href="/project/<%= featuredProject.id %>"><%= featuredProject.name %></a></strong>
+              <p><%= featuredProject.description || 'Imported project with no description yet.' %></p>
+              <div class="featured-project__meta">
+                <span><%= featuredProject.session_count %> sessions</span>
+                <span><%= featuredProject.workflow_count %> workflows</span>
+                <span>Last activity <%= featuredProject.activityLabel %></span>
+              </div>
+            </div>
+          <% } else { %>
+            <div class="empty-state">
+              <strong>No projects yet.</strong>
+              <p>Use back-fill or create a project from the project view to start populating the operator surface.</p>
+            </div>
+          <% } %>
+        </article>
+      </section>
+
+      <section class="grid grid--two">
+        <article class="card">
+          <div class="card__header">
+            <div>
+              <div class="eyebrow">Current state</div>
+              <h2>What the dashboard already knows</h2>
+            </div>
+          </div>
+          <div class="bullet-stack">
+            <% planning.currentState.slice(0, 6).forEach(function(item) { %>
+              <div class="bullet-stack__item"><%= item %></div>
+            <% }) %>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card__header">
+            <div>
+              <div class="eyebrow">Health</div>
+              <h2>Known gaps</h2>
+            </div>
+          </div>
+          <div class="bullet-stack">
+            <% planning.health.forEach(function(item) { %>
+              <div class="bullet-stack__item"><%= item %></div>
+            <% }) %>
+          </div>
+        </article>
+      </section>
+
+      <section class="grid grid--two">
+        <article class="card">
+          <div class="card__header">
+            <div>
+              <div class="eyebrow">Next up</div>
+              <h2>Planned refinements</h2>
+            </div>
+          </div>
+          <div class="task-list task-list--stacked">
+            <% planning.next.slice(0, 3).forEach(function(item) { %>
+              <div class="task-card task-card--muted">
+                <strong><%= item.title %></strong>
+                <ul>
+                  <% item.bullets.slice(0, 3).forEach(function(bullet) { %>
+                    <li><%= bullet %></li>
+                  <% }) %>
+                </ul>
+              </div>
+            <% }) %>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card__header">
+            <div>
+              <div class="eyebrow">Agents</div>
+              <h2>Registry and roles</h2>
+            </div>
+          </div>
+          <div class="agent-grid">
+            <% agents.forEach(function(agent) { %>
+              <div class="agent-card">
+                <strong><%= agent.name %></strong>
+                <span><%= agent.role %></span>
+                <span><%= agent.kind %></span>
+              </div>
+            <% }) %>
+          </div>
+        </article>
+      </section>
+    </main>
+  </div>
+</body>
+</html>
