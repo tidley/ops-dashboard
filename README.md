@@ -16,6 +16,7 @@ Self-hosted multi-agent, multi-project, multi-workflow operator dashboard.
   - memory namespace per project
   - project-scoped sessions/messages/workflows/logs
 - Threaded project conversation view with local OpenClaw routing
+- Separate `OpenClaw Main` conversation namespace for direct access to the main agent
 - Agent registry + routing adapters:
   - `echo` adapter (built-in)
   - `http` adapter (for external/local agent bridges)
@@ -31,6 +32,19 @@ Self-hosted multi-agent, multi-project, multi-workflow operator dashboard.
 - WebRTC data-channel gateway for browser access through a public VPS peer
 - Logout and access revocation for active sessions
 - Recent / favourites / archived project sidebar state persisted in SQLite
+
+## Current status
+As of 2026-03-27 UTC, the dashboard is in a working MVP state with the following active behavior:
+
+- Local dashboard runs on Express + EJS + SQLite with persisted projects, sessions, messages, workflows, logs, artifacts, and access sessions.
+- Access is locked down to authenticated sessions via NIP-17 bootstrap/signalling, with allowlisted pubkeys and session cookies.
+- Browser sign-in supports NIP-07, Amber / Nostr Connect, and optional `nsec`.
+- The access page is mobile-friendly and uses a minimal, tabbed sign-in card.
+- The conversation UI is optimized for mobile use, with the composer pinned to the bottom and conversation history persisted across reloads.
+- `Conversations` is project-scoped.
+- `OpenClaw Main` is its own separate conversation namespace and does not share history with the project chat tab.
+- The dashboard has a minimal dark UI and a usage overview with line charts on the home page and project overview tabs.
+- The OpenClaw CLI integration is still local-process based; set `OPENCLAW_BIN` if the binary is not on `PATH`.
 
 ## Run
 ```bash
@@ -56,6 +70,7 @@ If the binary is not on `PATH`, set:
 - `OPENCLAW_BIN` to the executable path or name
 
 The dashboard also passes project, session, workflow, and planning context into the OpenClaw prompt so replies stay grounded in the current workspace.
+If you see plugin SDK warnings from OpenClaw, they are deprecation warnings from bundled/plugin compat imports rather than a dashboard-side failure.
 
 ### Remote access
 The current remote access model is:
@@ -143,6 +158,7 @@ Response expected:
 - Let the browser and backend talk directly over WebRTC when ICE succeeds
 - Keep access locked to bootstrap/session routes plus the authenticated dashboard
 - Set strict headers (HSTS, X-Frame-Options, CSP, etc.)
+- The access route currently defaults to a single allowlisted pubkey for operator access
 
 For the direct relay/WebRTC version of the access flow, see:
 - [`docs/deployment-vps-wireguard.md`](docs/deployment-vps-wireguard.md)
