@@ -6,6 +6,8 @@ Self-hosted multi-agent, multi-project, multi-workflow operator dashboard.
 
 <img width="854" height="416" alt="image" src="https://github.com/user-attachments/assets/f432c02d-1943-4a29-aada-16884e5c9daf" />
 
+<img width="358" height="800" alt="image" src="https://github.com/user-attachments/assets/29a9e8b2-8b38-4e09-bca3-c37f8911eb7e" />
+
 
 ## Stack
 - Node.js + Express
