@@ -21,7 +21,6 @@ Self-hosted multi-agent, multi-project, multi-workflow operator dashboard.
   - `echo` adapter (built-in)
   - `http` adapter (for external/local agent bridges)
   - `openclaw` local CLI adapter for the conversation tab
-  - `codex` routing endpoint, backed by the OpenAI Responses API
 - Workflow state controls: create/run/pause/continue(done via state set)
 - Persistent storage across restarts
 - Public access flow with NIP-17 bootstrap, allowlisted pubkeys, and session cookies
@@ -53,15 +52,6 @@ npm install
 npm start
 # open http://127.0.0.1:4080
 ```
-
-### Codex integration
-The project page includes a `Run with Codex` action on the Conversations tab.
-Set these environment variables before starting the app:
-
-- `OPENAI_API_KEY` for the Codex route
-- `CODEX_MODEL` to override the default model (`gpt-5.3-codex`)
-- `CODEX_REASONING_EFFORT` to override the default effort (`medium`)
-- `CODEX_MAX_OUTPUT_TOKENS` to adjust response length
 
 ### OpenClaw integration
 The project conversation tab routes to the local OpenClaw CLI by default.
