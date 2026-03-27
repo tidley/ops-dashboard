@@ -2,7 +2,7 @@
 
 Self-hosted multi-agent, multi-project, multi-workflow operator dashboard.
 
-<img width="600" height="550" alt="image" src="https://github.com/user-attachments/assets/c8ff6078-e2bb-435b-9171-cbe3977da5c9" />
+<img width="600" height="550" alt="image" src="https://github.com/user-attachments/assets/a4af1d67-9af7-4cbb-91c5-4abf4a59afea" />
 
 <img width="854" height="416" alt="image" src="https://github.com/user-attachments/assets/f432c02d-1943-4a29-aada-16884e5c9daf" />
 
