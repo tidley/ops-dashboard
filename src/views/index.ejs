@@ -4,11 +4,20 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Ops Dashboard</title>
+  <link rel="icon" href="/public/od-icon.svg" />
+  <link rel="manifest" href="/public/manifest.webmanifest" />
+  <meta name="theme-color" content="#0f1115" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
   <link rel="stylesheet" href="/public/style.css" />
 </head>
-<body>
+<body data-page="home">
+  <% const projectSearchText = function(p) { return [p.name, p.id, p.description, p.status, p.sectionLabel, p.section, p.activityLabel, p.favorite ? 'favourite pinned' : '', p.archived ? 'archived' : '', (p.tags || []).join(' '), p.session_count, p.workflow_count, p.created_at, p.last_activity].filter(Boolean).join(' ').toLowerCase(); }; %>
+  <% const sidebarGroups = typeof projectGroups !== 'undefined' && projectGroups ? projectGroups : { recent: [], favourites: [], favorites: [], general: [], pave: [], sec06: [], archived: [] }; %>
+  <% const favouriteProjects = sidebarGroups.favourites || sidebarGroups.favorites || []; %>
+  <% const archivedProjects = sidebarGroups.archived || []; %>
   <div class="shell">
-    <aside class="sidebar">
+    <aside class="sidebar" id="home_sidebar" data-project-filter-root>
       <div class="brand">
         <div class="brand__mark">OD</div>
         <div>
@@ -21,53 +30,232 @@
         <button type="submit" class="btn btn-primary btn-block">Back-fill from /home/tom/code</button>
       </form>
 
-      <section class="sidebar-section">
-        <div class="sidebar-section__title">Projects</div>
-        <div class="project-list">
-          <% projectGroups.general.forEach(function(p) { %>
-            <a class="project-item" href="/project/<%= p.id %>">
-              <span class="project-item__top">
-                <strong><%= p.name %></strong>
-                <span class="badge badge-neutral"><%= p.sectionLabel %></span>
-              </span>
-              <span class="project-item__sub"><%= p.status %> | <%= p.session_count %> sessions | <%= p.workflow_count %> workflows</span>
-              <span class="project-item__foot"><%= p.activityLabel %></span>
-            </a>
+      <div class="search-box">
+        <label for="project_search">Search projects</label>
+        <input id="project_search" type="search" placeholder="Name, id, status, tags, activity..." autocomplete="off" spellcheck="false" data-project-filter-input />
+        <p class="search-help">Quick filter across any visible project field.</p>
+      </div>
+
+      <% if (sidebarGroups.recent.length) { %>
+        <section class="sidebar-section sidebar-section--collapsible" data-sidebar-collapsible data-sidebar-section-key="recent" data-project-section>
+          <button type="button" class="sidebar-section__titlebar" data-sidebar-collapse aria-expanded="true">
+            <span class="sidebar-section__title">Recent</span>
+            <span class="sidebar-section__chevron" aria-hidden="true">▾</span>
+          </button>
+          <div class="project-list" data-project-group data-sidebar-body>
+            <% sidebarGroups.recent.forEach(function(p) { %>
+              <div class="project-item" data-project-item data-project-search="<%= projectSearchText(p) %>">
+                <div class="project-item__content">
+                  <a class="project-item__link" href="/project/<%= p.id %>">
+                    <span class="project-item__top">
+                      <strong><%= p.name %></strong>
+                      <span class="badge badge-neutral"><%= p.sectionLabel %></span>
+                    </span>
+                    <span class="project-item__sub"><%= p.status %> | <%= p.session_count %> sessions | <%= p.workflow_count %> workflows</span>
+                    <span class="project-item__foot"><%= p.activityLabel %></span>
+                  </a>
+                </div>
+                <form method="post" action="/api/projects/<%= p.id %>/favorite" class="project-item__pin-form">
+                  <input type="hidden" name="favorite" value="1" />
+                  <input type="hidden" name="return_to" value="/" />
+                  <button type="submit" class="project-item__pin-btn" aria-label="Add to favourites" title="Add to favourites">
+                    <svg class="project-item__pin-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                      <path d="M9 3h6l.8 5.2c.1.6.4 1.2.9 1.6l1.8 1.5c.3.2.5.6.5 1v1.2H14l-1 8-1-8H4.8v-1.2c0-.4.2-.7.5-1l1.8-1.5c.5-.4.8-1 .9-1.6L9 3zm1.8 1.8-.5 3.4c-.2 1-.6 1.9-1.3 2.7l-.7.7h7.4l-.7-.7c-.7-.7-1.1-1.7-1.3-2.7l-.5-3.4h-2.4z"></path>
+                    </svg>
+                  </button>
+                </form>
+                <form method="post" action="/api/projects/<%= p.id %>/archive" class="project-item__archive-form">
+                  <input type="hidden" name="archived" value="1" />
+                  <input type="hidden" name="return_to" value="/" />
+                  <button type="submit" class="project-item__archive-btn" aria-label="Archive project" title="Archive">Archive</button>
+                </form>
+              </div>
+            <% }) %>
+          </div>
+        </section>
+      <% } %>
+
+      <% if (favouriteProjects.length) { %>
+        <section class="sidebar-section sidebar-section--collapsible" data-sidebar-collapsible data-sidebar-section-key="favourites" data-project-section>
+          <button type="button" class="sidebar-section__titlebar" data-sidebar-collapse aria-expanded="true">
+            <span class="sidebar-section__title">Favourites</span>
+            <span class="sidebar-section__chevron" aria-hidden="true">▾</span>
+          </button>
+          <div class="project-list" data-project-group data-sidebar-body>
+            <% favouriteProjects.forEach(function(p) { %>
+              <div class="project-item project-item--favorite" data-project-item data-project-search="<%= projectSearchText(p) %>">
+                <div class="project-item__content">
+                  <a class="project-item__link" href="/project/<%= p.id %>">
+                    <span class="project-item__top">
+                      <strong><%= p.name %></strong>
+                      <span class="badge badge-accent"><%= p.sectionLabel %></span>
+                    </span>
+                    <span class="project-item__sub"><%= p.status %> | <%= p.session_count %> sessions | <%= p.workflow_count %> workflows</span>
+                    <span class="project-item__foot"><%= p.activityLabel %></span>
+                  </a>
+                </div>
+                <form method="post" action="/api/projects/<%= p.id %>/favorite" class="project-item__pin-form">
+                  <input type="hidden" name="favorite" value="0" />
+                  <input type="hidden" name="return_to" value="/" />
+                  <button type="submit" class="project-item__pin-btn" aria-label="Remove from favourites" title="Remove from favourites">
+                    <svg class="project-item__pin-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                      <path d="M9 3h6l.8 5.2c.1.6.4 1.2.9 1.6l1.8 1.5c.3.2.5.6.5 1v1.2H14l-1 8-1-8H4.8v-1.2c0-.4.2-.7.5-1l1.8-1.5c.5-.4.8-1 .9-1.6L9 3zm1.8 1.8-.5 3.4c-.2 1-.6 1.9-1.3 2.7l-.7.7h7.4l-.7-.7c-.7-.7-1.1-1.7-1.3-2.7l-.5-3.4h-2.4z"></path>
+                    </svg>
+                  </button>
+                </form>
+                <form method="post" action="/api/projects/<%= p.id %>/archive" class="project-item__archive-form">
+                  <input type="hidden" name="archived" value="1" />
+                  <input type="hidden" name="return_to" value="/" />
+                  <button type="submit" class="project-item__archive-btn" aria-label="Archive project" title="Archive">Archive</button>
+                </form>
+              </div>
+            <% }) %>
+          </div>
+        </section>
+      <% } %>
+
+      <section class="sidebar-section sidebar-section--collapsible" data-sidebar-collapsible data-sidebar-section-key="projects" data-project-section>
+        <button type="button" class="sidebar-section__titlebar" data-sidebar-collapse aria-expanded="true">
+          <span class="sidebar-section__title">Projects</span>
+          <span class="sidebar-section__chevron" aria-hidden="true">▾</span>
+        </button>
+        <div class="project-list" data-project-group data-sidebar-body>
+          <% sidebarGroups.general.forEach(function(p) { %>
+            <div class="project-item" data-project-item data-project-search="<%= projectSearchText(p) %>">
+              <div class="project-item__content">
+                <a class="project-item__link" href="/project/<%= p.id %>">
+                  <span class="project-item__top">
+                    <strong><%= p.name %></strong>
+                    <span class="badge badge-neutral"><%= p.sectionLabel %></span>
+                  </span>
+                  <span class="project-item__sub"><%= p.status %> | <%= p.session_count %> sessions | <%= p.workflow_count %> workflows</span>
+                  <span class="project-item__foot"><%= p.activityLabel %></span>
+                </a>
+              </div>
+              <form method="post" action="/api/projects/<%= p.id %>/favorite" class="project-item__pin-form">
+                <input type="hidden" name="favorite" value="1" />
+                <input type="hidden" name="return_to" value="/" />
+                <button type="submit" class="project-item__pin-btn" aria-label="Add to favourites" title="Add to favourites">
+                  <svg class="project-item__pin-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <path d="M9 3h6l.8 5.2c.1.6.4 1.2.9 1.6l1.8 1.5c.3.2.5.6.5 1v1.2H14l-1 8-1-8H4.8v-1.2c0-.4.2-.7.5-1l1.8-1.5c.5-.4.8-1 .9-1.6L9 3zm1.8 1.8-.5 3.4c-.2 1-.6 1.9-1.3 2.7l-.7.7h7.4l-.7-.7c-.7-.7-1.1-1.7-1.3-2.7l-.5-3.4h-2.4z"></path>
+                  </svg>
+                </button>
+              </form>
+              <form method="post" action="/api/projects/<%= p.id %>/archive" class="project-item__archive-form">
+                <input type="hidden" name="archived" value="1" />
+                <input type="hidden" name="return_to" value="/" />
+                <button type="submit" class="project-item__archive-btn" aria-label="Archive project" title="Archive">Archive</button>
+              </form>
+            </div>
           <% }) %>
         </div>
       </section>
 
-      <section class="sidebar-section">
-        <div class="sidebar-section__title">Pave</div>
-        <div class="project-list">
-          <% projectGroups.pave.forEach(function(p) { %>
-            <a class="project-item" href="/project/<%= p.id %>">
-              <span class="project-item__top">
-                <strong><%= p.name %></strong>
-                <span class="badge badge-accent">Pave</span>
-              </span>
-              <span class="project-item__sub"><%= p.status %> | <%= p.session_count %> sessions | <%= p.workflow_count %> workflows</span>
-              <span class="project-item__foot"><%= p.activityLabel %></span>
-            </a>
+      <section class="sidebar-section sidebar-section--collapsible" data-sidebar-collapsible data-sidebar-section-key="pave" data-project-section>
+        <button type="button" class="sidebar-section__titlebar" data-sidebar-collapse aria-expanded="true">
+          <span class="sidebar-section__title">Pave</span>
+          <span class="sidebar-section__chevron" aria-hidden="true">▾</span>
+        </button>
+        <div class="project-list" data-project-group data-sidebar-body>
+          <% sidebarGroups.pave.forEach(function(p) { %>
+            <div class="project-item" data-project-item data-project-search="<%= projectSearchText(p) %>">
+              <div class="project-item__content">
+                <a class="project-item__link" href="/project/<%= p.id %>">
+                  <span class="project-item__top">
+                    <strong><%= p.name %></strong>
+                    <span class="badge badge-accent">Pave</span>
+                  </span>
+                  <span class="project-item__sub"><%= p.status %> | <%= p.session_count %> sessions | <%= p.workflow_count %> workflows</span>
+                  <span class="project-item__foot"><%= p.activityLabel %></span>
+                </a>
+              </div>
+              <form method="post" action="/api/projects/<%= p.id %>/favorite" class="project-item__pin-form">
+                <input type="hidden" name="favorite" value="1" />
+                <input type="hidden" name="return_to" value="/" />
+                <button type="submit" class="project-item__pin-btn" aria-label="Add to favourites" title="Add to favourites">
+                  <svg class="project-item__pin-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <path d="M9 3h6l.8 5.2c.1.6.4 1.2.9 1.6l1.8 1.5c.3.2.5.6.5 1v1.2H14l-1 8-1-8H4.8v-1.2c0-.4.2-.7.5-1l1.8-1.5c.5-.4.8-1 .9-1.6L9 3zm1.8 1.8-.5 3.4c-.2 1-.6 1.9-1.3 2.7l-.7.7h7.4l-.7-.7c-.7-.7-1.1-1.7-1.3-2.7l-.5-3.4h-2.4z"></path>
+                  </svg>
+                </button>
+              </form>
+              <form method="post" action="/api/projects/<%= p.id %>/archive" class="project-item__archive-form">
+                <input type="hidden" name="archived" value="1" />
+                <input type="hidden" name="return_to" value="/" />
+                <button type="submit" class="project-item__archive-btn" aria-label="Archive project" title="Archive">Archive</button>
+              </form>
+            </div>
           <% }) %>
         </div>
       </section>
 
-      <section class="sidebar-section">
-        <div class="sidebar-section__title">sec06</div>
-        <div class="project-list">
-          <% projectGroups.sec06.forEach(function(p) { %>
-            <a class="project-item" href="/project/<%= p.id %>">
-              <span class="project-item__top">
-                <strong><%= p.name %></strong>
-                <span class="badge badge-neutral">sec06</span>
-              </span>
-              <span class="project-item__sub"><%= p.status %> | <%= p.session_count %> sessions | <%= p.workflow_count %> workflows</span>
-              <span class="project-item__foot"><%= p.activityLabel %></span>
-            </a>
+      <section class="sidebar-section sidebar-section--collapsible" data-sidebar-collapsible data-sidebar-section-key="sec06" data-project-section>
+        <button type="button" class="sidebar-section__titlebar" data-sidebar-collapse aria-expanded="true">
+          <span class="sidebar-section__title">sec06</span>
+          <span class="sidebar-section__chevron" aria-hidden="true">▾</span>
+        </button>
+        <div class="project-list" data-project-group data-sidebar-body>
+          <% sidebarGroups.sec06.forEach(function(p) { %>
+            <div class="project-item" data-project-item data-project-search="<%= projectSearchText(p) %>">
+              <div class="project-item__content">
+                <a class="project-item__link" href="/project/<%= p.id %>">
+                  <span class="project-item__top">
+                    <strong><%= p.name %></strong>
+                    <span class="badge badge-neutral">sec06</span>
+                  </span>
+                  <span class="project-item__sub"><%= p.status %> | <%= p.session_count %> sessions | <%= p.workflow_count %> workflows</span>
+                  <span class="project-item__foot"><%= p.activityLabel %></span>
+                </a>
+              </div>
+              <form method="post" action="/api/projects/<%= p.id %>/favorite" class="project-item__pin-form">
+                <input type="hidden" name="favorite" value="1" />
+                <input type="hidden" name="return_to" value="/" />
+                <button type="submit" class="project-item__pin-btn" aria-label="Add to favourites" title="Add to favourites">
+                  <svg class="project-item__pin-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <path d="M9 3h6l.8 5.2c.1.6.4 1.2.9 1.6l1.8 1.5c.3.2.5.6.5 1v1.2H14l-1 8-1-8H4.8v-1.2c0-.4.2-.7.5-1l1.8-1.5c.5-.4.8-1 .9-1.6L9 3zm1.8 1.8-.5 3.4c-.2 1-.6 1.9-1.3 2.7l-.7.7h7.4l-.7-.7c-.7-.7-1.1-1.7-1.3-2.7l-.5-3.4h-2.4z"></path>
+                  </svg>
+                </button>
+              </form>
+              <form method="post" action="/api/projects/<%= p.id %>/archive" class="project-item__archive-form">
+                <input type="hidden" name="archived" value="1" />
+                <input type="hidden" name="return_to" value="/" />
+                <button type="submit" class="project-item__archive-btn" aria-label="Archive project" title="Archive">Archive</button>
+              </form>
+            </div>
           <% }) %>
         </div>
       </section>
+
+      <% if (archivedProjects.length) { %>
+        <section class="sidebar-section sidebar-section--collapsible" data-sidebar-collapsible data-sidebar-section-key="archived" data-project-section>
+          <button type="button" class="sidebar-section__titlebar" data-sidebar-collapse aria-expanded="true">
+            <span class="sidebar-section__title">Archived</span>
+            <span class="sidebar-section__chevron" aria-hidden="true">▾</span>
+          </button>
+          <div class="project-list" data-project-group data-sidebar-body>
+            <% archivedProjects.forEach(function(p) { %>
+              <div class="project-item" data-project-item data-project-search="<%= projectSearchText(p) %>">
+                <div class="project-item__content">
+                  <a class="project-item__link" href="/project/<%= p.id %>">
+                    <span class="project-item__top">
+                      <strong><%= p.name %></strong>
+                      <span class="badge badge-neutral">Archived</span>
+                    </span>
+                    <span class="project-item__sub"><%= p.status %> | <%= p.session_count %> sessions | <%= p.workflow_count %> workflows</span>
+                    <span class="project-item__foot"><%= p.activityLabel %></span>
+                  </a>
+                </div>
+                <form method="post" action="/api/projects/<%= p.id %>/archive" class="project-item__archive-form">
+                  <input type="hidden" name="archived" value="0" />
+                  <input type="hidden" name="return_to" value="/" />
+                  <button type="submit" class="project-item__archive-btn" aria-label="Unarchive project" title="Unarchive">Unarchive</button>
+                </form>
+              </div>
+            <% }) %>
+          </div>
+        </section>
+      <% } %>
+
+      <div class="project-empty" data-project-empty hidden>No projects match your search.</div>
 
       <section class="sidebar-section">
         <div class="sidebar-section__title">Agents</div>
@@ -82,6 +270,8 @@
       </section>
     </aside>
 
+    <div class="sidebar-backdrop" data-sidebar-backdrop></div>
+
     <main class="workspace">
       <header class="topbar">
         <div>
@@ -90,6 +280,10 @@
           <p>Project isolation, routing, and work tracking in one local control surface.</p>
         </div>
         <div class="topbar__meta">
+          <button type="button" class="btn sidebar-toggle" data-sidebar-toggle aria-controls="home_sidebar" aria-expanded="false">Projects</button>
+          <form method="post" action="/logout" class="topbar__logout-form">
+            <button type="submit" class="btn btn-danger">Logout</button>
+          </form>
           <span class="chip chip-success"><%= dashboard.activeProjectCount %> active</span>
           <span class="chip"><%= dashboard.projectCount %> projects</span>
           <span class="chip"><%= dashboard.sessionCount %> sessions</span>
@@ -101,23 +295,16 @@
         <article class="card card--hero">
           <div class="card__header">
             <div>
-              <div class="eyebrow">Objective</div>
-              <h2><%= planning.objective %></h2>
+              <div class="eyebrow">Overview</div>
+              <h2>Live platform snapshot</h2>
             </div>
             <span class="badge badge-accent">NOW</span>
           </div>
-          <p class="lede">The roadmap currently emphasizes local auth, bridge routing, and operator hardening.</p>
+          <p class="lede">The overview keeps to fleet health and agent traffic. Project objectives live in the project view.</p>
 
-          <div class="task-list">
-            <% planning.now.slice(0, 3).forEach(function(item) { %>
-              <div class="task-card">
-                <strong><%= item.title %></strong>
-                <ul>
-                  <% item.bullets.slice(0, 3).forEach(function(bullet) { %>
-                    <li><%= bullet %></li>
-                  <% }) %>
-                </ul>
-              </div>
+          <div class="bullet-stack bullet-stack--compact">
+            <% planning.currentState.slice(0, 4).forEach(function(item) { %>
+              <div class="bullet-stack__item"><%= item %></div>
             <% }) %>
           </div>
         </article>
@@ -129,11 +316,11 @@
               <h2>Operational counts</h2>
             </div>
           </div>
-          <div class="metric-grid metric-grid--compact">
-            <div class="metric">
-              <strong><%= dashboard.projectCount %></strong>
-              <span>Projects</span>
-            </div>
+            <div class="metric-grid metric-grid--compact">
+              <div class="metric">
+                <strong><%= dashboard.projectCount %></strong>
+                <span>Projects</span>
+              </div>
             <div class="metric">
               <strong><%= dashboard.activeProjectCount %></strong>
               <span>Active</span>
@@ -146,29 +333,82 @@
               <strong><%= dashboard.workflowCount %></strong>
               <span>Workflows</span>
             </div>
+              <div class="metric">
+                <strong><%= dashboard.agentCount %></strong>
+                <span>Agents</span>
+              </div>
+              <div class="metric">
+                <strong><%= usage.aggregateTodayTotal.toLocaleString('en-US') %></strong>
+                <span>Tokens today</span>
+              </div>
             <div class="metric">
-              <strong><%= dashboard.agentCount %></strong>
-              <span>Agents</span>
+              <strong><%= usage.aggregateWeeklyTotal.toLocaleString('en-US') %></strong>
+              <span>Tokens 7d</span>
+            </div>
+            </div>
+        </article>
+      </section>
+
+      <section class="card card--usage card--usage-island" data-usage-panel data-usage-default-range="24h">
+          <div class="card__header">
+            <div>
+              <div class="eyebrow">OpenClaw usage</div>
+              <h2>Hourly token use today</h2>
+            </div>
+            <div class="usage-range-toggle" role="tablist" aria-label="Aggregate usage range">
+              <button type="button" class="chip" data-usage-range="24h">24h</button>
+              <button type="button" class="chip" data-usage-range="7d">7d</button>
+              <button type="button" class="chip" data-usage-range="30d">30d</button>
             </div>
           </div>
-          <% if (featuredProject) { %>
-            <div class="featured-project">
-              <div class="featured-project__title">Featured project</div>
-              <strong><a href="/project/<%= featuredProject.id %>"><%= featuredProject.name %></a></strong>
-              <p><%= featuredProject.description || 'Imported project with no description yet.' %></p>
-              <div class="featured-project__meta">
-                <span><%= featuredProject.session_count %> sessions</span>
-                <span><%= featuredProject.workflow_count %> workflows</span>
-                <span>Last activity <%= featuredProject.activityLabel %></span>
-              </div>
+          <% if (usage.aggregateTodayTotal || usage.aggregateWeeklyTotal || usage.aggregate30dTotal) { %>
+            <div class="usage-summary">
+              <strong><%= usage.aggregateTodayTotal.toLocaleString('en-US') %> tokens today</strong>
+              <span><%= usage.aggregateWeeklyTotal.toLocaleString('en-US') %> tokens this week</span>
             </div>
+            <div
+              class="usage-chart"
+              data-usage-chart
+              data-usage-default-range="24h"
+              data-usage-series-24h='<%- JSON.stringify(usage.aggregate24hSeries) %>'
+              data-usage-labels-24h='<%- JSON.stringify(usage.hourLabels) %>'
+              data-usage-series-7d='<%- JSON.stringify(usage.aggregate7dSeries) %>'
+              data-usage-labels-7d='<%- JSON.stringify(usage.dayLabels) %>'
+              data-usage-series-30d='<%- JSON.stringify(usage.aggregate30dSeries) %>'
+              data-usage-labels-30d='<%- JSON.stringify(usage.monthLabels) %>'
+            ></div>
+            <div class="usage-section-divider">
+              <div class="eyebrow">By project</div>
+            </div>
+            <% if (usage.projectSummaries.length) { %>
+              <div class="usage-list">
+                <% usage.projectSummaries.slice(0, 6).forEach(function(item) { %>
+                  <div class="usage-row">
+                    <div class="usage-row__meta">
+                      <strong><a href="/project/<%= item.id %>"><%= item.name %></a></strong>
+                      <span><%= item.todayTotal.toLocaleString('en-US') %> today · <%= item.weeklyTotal.toLocaleString('en-US') %> this week</span>
+                    </div>
+                    <div
+                      class="usage-chart usage-chart--mini"
+                      data-usage-chart
+                      data-usage-default-range="7d"
+                      data-usage-series-24h='<%- JSON.stringify(item.series24h) %>'
+                      data-usage-labels-24h='<%- JSON.stringify(item.labels24h) %>'
+                      data-usage-series-7d='<%- JSON.stringify(item.series7d) %>'
+                      data-usage-labels-7d='<%- JSON.stringify(item.labels7d) %>'
+                      data-usage-series-30d='<%- JSON.stringify(item.series30d) %>'
+                      data-usage-labels-30d='<%- JSON.stringify(item.labels30d) %>'
+                    ></div>
+                  </div>
+                <% }) %>
+              </div>
+            <% } %>
           <% } else { %>
             <div class="empty-state">
-              <strong>No projects yet.</strong>
-              <p>Use back-fill or create a project from the project view to start populating the operator surface.</p>
+              <strong>No hourly usage yet.</strong>
+              <p>OpenClaw usage appears here once messages are routed through the agents.</p>
             </div>
           <% } %>
-        </article>
       </section>
 
       <section class="grid grid--two">
@@ -243,5 +483,57 @@
       </section>
     </main>
   </div>
+  <script src="/public/sidebar-sections.js" defer></script>
+  <script src="/public/home-sidebar.js" defer></script>
+  <script src="/public/home-usage.js" defer></script>
+  <script>
+    (function() {
+      function initProjectFilter(root) {
+        var input = root.querySelector('[data-project-filter-input]');
+        if (!input) return;
+        var items = Array.prototype.slice.call(root.querySelectorAll('[data-project-item]'));
+        var groups = Array.prototype.slice.call(root.querySelectorAll('[data-project-group]'));
+        var sections = Array.prototype.slice.call(root.querySelectorAll('[data-project-section]'));
+        var emptyState = root.querySelector('[data-project-empty]');
+
+        function refresh() {
+          var query = input.value.trim().toLowerCase();
+          var visibleCount = 0;
+
+          items.forEach(function(item) {
+            var haystack = (item.dataset.projectSearch || '');
+            var visible = !query || haystack.indexOf(query) !== -1;
+            item.hidden = !visible;
+            if (visible) visibleCount += 1;
+          });
+
+          groups.forEach(function(group) {
+            var groupItems = Array.prototype.slice.call(group.querySelectorAll('[data-project-item]'));
+            var hasVisibleItem = groupItems.some(function(item) { return !item.hidden; });
+            group.hidden = !hasVisibleItem;
+          });
+
+          sections.forEach(function(section) {
+            var sectionItems = Array.prototype.slice.call(section.querySelectorAll('[data-project-item]'));
+            var hasVisibleItem = sectionItems.some(function(item) { return !item.hidden; });
+            section.hidden = !hasVisibleItem;
+          });
+
+          if (emptyState) {
+            emptyState.hidden = visibleCount !== 0;
+          }
+        }
+
+        input.addEventListener('beforeinput', refresh);
+        input.addEventListener('input', refresh);
+        input.addEventListener('keyup', refresh);
+        input.addEventListener('search', refresh);
+        refresh();
+      }
+
+      document.querySelectorAll('[data-project-filter-root]').forEach(initProjectFilter);
+    })();
+  </script>
+  <script src="/public/pwa-register.js" defer></script>
 </body>
 </html>

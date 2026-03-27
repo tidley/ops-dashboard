@@ -1,0 +1,23 @@
+[Unit]
+Description=Ops Dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/tom/code/ops-dashboard
+Environment=HOME=/home/tom
+Environment=USER=tom
+Environment=PATH=/home/tom/.nvm/versions/node/v24.12.0/bin:/usr/local/bin:/usr/bin:/bin:/home/tom/.local/bin
+Environment=APP_HOST=10.10.0.2
+Environment=PORT=1717
+Environment=BACKEND_BASE_URL=http://10.10.0.2:1717
+Environment=OPENCLAW_BIN=/home/tom/.nvm/versions/node/v24.12.0/bin/openclaw
+Environment=NODE_ENV=production
+ExecStart=/home/tom/.nvm/versions/node/v24.12.0/bin/node /home/tom/code/ops-dashboard/src/app.js
+Restart=always
+RestartSec=3
+TimeoutStopSec=10
+
+[Install]
+WantedBy=default.target

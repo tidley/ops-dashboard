@@ -8,3 +8,4 @@
 - Full-text search over project messages/logs
 - Export/import project bundles
 - UI theming polish and accessibility pass
+- Amber / Nostr Connect and `nsec` e2e coverage for the access page

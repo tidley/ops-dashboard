@@ -6,17 +6,27 @@
   "scripts": {
     "start": "node src/app.js",
     "dev": "node --watch src/app.js",
-    "backfill": "node scripts/backfill-projects.js"
+    "backfill": "node scripts/backfill-projects.js",
+    "test": "mocha --reporter spec --timeout 10000 test/**/*.test.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@roamhq/wrtc": "^0.10.0",
+    "axios": "^1.13.6",
     "better-sqlite3": "^12.8.0",
     "cookie-parser": "^1.4.7",
     "ejs": "^5.0.1",
     "express": "^5.2.1",
+    "nostr-tools": "^2.23.3",
+    "simple-peer": "^9.11.1",
     "uuid": "^13.0.0"
+  },
+  "devDependencies": {
+    "chai": "^6.2.2",
+    "esbuild": "^0.27.4",
+    "mocha": "^11.7.5"
   }
 }

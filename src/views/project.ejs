@@ -4,61 +4,220 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title><%= project.name %> | Ops Dashboard</title>
+  <link rel="icon" href="/public/od-icon.svg" />
+  <link rel="manifest" href="/public/manifest.webmanifest" />
+  <meta name="theme-color" content="#0f1115" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
   <link rel="stylesheet" href="/public/style.css" />
 </head>
-<body>
+<body data-page="project" data-project-id="<%= project.id %>" data-active-tab="<%= activeTab %>">
+  <% const tabLabels = { overview: 'Overview', conversations: 'Chat', 'main-agent': 'OpenClaw Main', workflows: 'Workflows', memory: 'Memory', files: 'Files', logs: 'Logs', settings: 'Settings' }; %>
+  <% const tabHref = function(tab) { return '/project/' + project.id + '?tab=' + tab + (activeSession ? '&session=' + encodeURIComponent(activeSession) : ''); }; %>
+  <% const agentById = Object.fromEntries(agents.map(function(agent) { return [agent.id, agent]; })); %>
+  <% const conversationAgentId = conversationAgent ? conversationAgent.id : ''; %>
+  <% const conversationAgentLabel = conversationAgent ? conversationAgent.name : 'OpenClaw Main'; %>
+  <% const messageAuthor = function(message) {
+       if (message.direction === 'outbound') return 'You';
+       const agent = message.agent_id && agentById[message.agent_id] ? agentById[message.agent_id].name : '';
+       if (agent) return agent;
+       return message.message_type === 'codex' ? 'Codex' : 'Agent';
+     }; %>
+  <% const projectSearchText = function(p) { return [p.name, p.id, p.description, p.status, p.sectionLabel, p.section, p.activityLabel, p.favorite ? 'favourite pinned' : '', p.archived ? 'archived' : '', (p.tags || []).join(' '), p.session_count, p.workflow_count, p.created_at, p.last_activity].filter(Boolean).join(' ').toLowerCase(); }; %>
+  <% const fileNameFromPath = function(filePath) {
+       const value = String(filePath || '').trim();
+       if (!value) return '(unknown file)';
+       const parts = value.split('/').filter(Boolean);
+       return parts.length ? parts[parts.length - 1] : value;
+     }; %>
+  <% const sidebarGroups = typeof projectGroups !== 'undefined' && projectGroups ? projectGroups : { recent: [], favourites: [], favorites: [], general: [], pave: [], sec06: [], archived: [] }; %>
+  <% const favouriteProjects = sidebarGroups.favourites || sidebarGroups.favorites || []; %>
+  <% const archivedProjects = sidebarGroups.archived || []; %>
+
   <div class="shell">
-    <aside class="sidebar">
+    <aside class="sidebar" id="project_sidebar" data-project-filter-root>
       <div class="brand">
         <div class="brand__mark">OD</div>
         <div>
-          <div class="eyebrow">Project Workspace</div>
           <h1><a href="/">Ops Dashboard</a></h1>
         </div>
       </div>
 
       <section class="sidebar-section sidebar-section--project">
-        <div class="sidebar-section__title">Current project</div>
         <div class="project-summary">
           <strong><%= project.name %></strong>
           <span><%= project.status %> | <%= stats.sessionCount %> sessions | <%= stats.workflowCount %> workflows</span>
           <span><%= formatRelativeTime(project.last_activity || project.created_at) %></span>
-          <% if (stats.importedFrom) { %>
-            <code><%= stats.importedFrom %></code>
-          <% } %>
         </div>
       </section>
 
-      <section class="sidebar-section">
-        <div class="sidebar-section__title">Projects</div>
-        <div class="project-list">
-          <% sidebarProjects.forEach(function(p) { %>
-            <a class="project-item <%= p.id === project.id ? 'project-item--active' : '' %>" href="/project/<%= p.id %>">
-              <span class="project-item__top">
-                <strong><%= p.name %></strong>
-                <span class="badge <%= p.id === project.id ? 'badge-accent' : 'badge-neutral' %>"><%= p.sectionLabel %></span>
-              </span>
-              <span class="project-item__sub"><%= p.status %> | <%= p.session_count %> sessions | <%= p.workflow_count %> workflows</span>
-              <span class="project-item__foot"><%= p.activityLabel %></span>
-            </a>
+      <div class="search-box">
+        <label for="project_search">Search projects</label>
+        <input id="project_search" type="search" placeholder="Name, id, status, tags, activity..." autocomplete="off" spellcheck="false" data-project-filter-input />
+        <p class="search-help">Quick filter across any visible project field.</p>
+      </div>
+
+      <% if (sidebarGroups.recent.length) { %>
+        <section class="sidebar-section sidebar-section--collapsible" data-sidebar-collapsible data-sidebar-section-key="recent" data-project-section>
+          <button type="button" class="sidebar-section__titlebar" data-sidebar-collapse aria-expanded="true">
+            <span class="sidebar-section__title">Recent</span>
+            <span class="sidebar-section__chevron" aria-hidden="true">▾</span>
+          </button>
+          <div class="project-list" data-project-group data-sidebar-body>
+            <% sidebarGroups.recent.forEach(function(p) { %>
+              <div class="project-item <%= p.id === project.id ? 'project-item--active' : '' %>" data-project-item data-project-search="<%= projectSearchText(p) %>">
+                <div class="project-item__content">
+                  <a class="project-item__link" href="/project/<%= p.id %>">
+                    <span class="project-item__top">
+                      <strong><%= p.name %></strong>
+                      <span class="badge badge-neutral"><%= p.sectionLabel %></span>
+                    </span>
+                    <span class="project-item__sub"><%= p.status %> | <%= p.session_count %> sessions | <%= p.workflow_count %> workflows</span>
+                    <span class="project-item__foot"><%= p.activityLabel %></span>
+                  </a>
+                </div>
+                <form method="post" action="/api/projects/<%= p.id %>/favorite" class="project-item__pin-form">
+                  <input type="hidden" name="favorite" value="1" />
+                  <input type="hidden" name="return_to" value="<%= tabHref(activeTab) %>" />
+                  <button type="submit" class="project-item__pin-btn" aria-label="Add to favourites" title="Add to favourites">
+                    <svg class="project-item__pin-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                      <path d="M9 3h6l.8 5.2c.1.6.4 1.2.9 1.6l1.8 1.5c.3.2.5.6.5 1v1.2H14l-1 8-1-8H4.8v-1.2c0-.4.2-.7.5-1l1.8-1.5c.5-.4.8-1 .9-1.6L9 3zm1.8 1.8-.5 3.4c-.2 1-.6 1.9-1.3 2.7l-.7.7h7.4l-.7-.7c-.7-.7-1.1-1.7-1.3-2.7l-.5-3.4h-2.4z"></path>
+                    </svg>
+                  </button>
+                </form>
+                <form method="post" action="/api/projects/<%= p.id %>/archive" class="project-item__archive-form">
+                  <input type="hidden" name="archived" value="1" />
+                  <input type="hidden" name="return_to" value="<%= tabHref(activeTab) %>" />
+                  <button type="submit" class="project-item__archive-btn" aria-label="Archive project" title="Archive">Archive</button>
+                </form>
+              </div>
+            <% }) %>
+          </div>
+        </section>
+      <% } %>
+
+      <% if (favouriteProjects.length) { %>
+        <section class="sidebar-section sidebar-section--collapsible" data-sidebar-collapsible data-sidebar-section-key="favourites" data-project-section>
+          <button type="button" class="sidebar-section__titlebar" data-sidebar-collapse aria-expanded="true">
+            <span class="sidebar-section__title">Favourites</span>
+            <span class="sidebar-section__chevron" aria-hidden="true">▾</span>
+          </button>
+          <div class="project-list" data-project-group data-sidebar-body>
+            <% favouriteProjects.forEach(function(p) { %>
+              <div class="project-item project-item--favorite" data-project-item data-project-search="<%= projectSearchText(p) %>">
+                <div class="project-item__content">
+                  <a class="project-item__link" href="/project/<%= p.id %>">
+                    <span class="project-item__top">
+                      <strong><%= p.name %></strong>
+                      <span class="badge badge-accent"><%= p.sectionLabel %></span>
+                    </span>
+                    <span class="project-item__sub"><%= p.status %> | <%= p.session_count %> sessions | <%= p.workflow_count %> workflows</span>
+                    <span class="project-item__foot"><%= p.activityLabel %></span>
+                  </a>
+                </div>
+                <form method="post" action="/api/projects/<%= p.id %>/favorite" class="project-item__pin-form">
+                  <input type="hidden" name="favorite" value="0" />
+                  <input type="hidden" name="return_to" value="<%= tabHref(activeTab) %>" />
+                  <button type="submit" class="project-item__pin-btn" aria-label="Remove from favourites" title="Remove from favourites">
+                    <svg class="project-item__pin-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                      <path d="M9 3h6l.8 5.2c.1.6.4 1.2.9 1.6l1.8 1.5c.3.2.5.6.5 1v1.2H14l-1 8-1-8H4.8v-1.2c0-.4.2-.7.5-1l1.8-1.5c.5-.4.8-1 .9-1.6L9 3zm1.8 1.8-.5 3.4c-.2 1-.6 1.9-1.3 2.7l-.7.7h7.4l-.7-.7c-.7-.7-1.1-1.7-1.3-2.7l-.5-3.4h-2.4z"></path>
+                    </svg>
+                  </button>
+                </form>
+                <form method="post" action="/api/projects/<%= p.id %>/archive" class="project-item__archive-form">
+                  <input type="hidden" name="archived" value="1" />
+                  <input type="hidden" name="return_to" value="<%= tabHref(activeTab) %>" />
+                  <button type="submit" class="project-item__archive-btn" aria-label="Archive project" title="Archive">Archive</button>
+                </form>
+              </div>
+            <% }) %>
+          </div>
+        </section>
+      <% } %>
+
+      <section class="sidebar-section sidebar-section--collapsible" data-sidebar-collapsible data-sidebar-section-key="projects" data-project-section>
+        <button type="button" class="sidebar-section__titlebar" data-sidebar-collapse aria-expanded="true">
+          <span class="sidebar-section__title">Projects</span>
+          <span class="sidebar-section__chevron" aria-hidden="true">▾</span>
+        </button>
+        <div class="project-list" data-project-group data-sidebar-body>
+          <% sidebarGroups.general.forEach(function(p) { %>
+            <div class="project-item <%= p.id === project.id ? 'project-item--active' : '' %>" data-project-item data-project-search="<%= projectSearchText(p) %>">
+              <div class="project-item__content">
+                <a class="project-item__link" href="/project/<%= p.id %>">
+                  <span class="project-item__top">
+                    <strong><%= p.name %></strong>
+                    <span class="badge <%= p.id === project.id ? 'badge-accent' : 'badge-neutral' %>"><%= p.sectionLabel %></span>
+                  </span>
+                  <span class="project-item__sub"><%= p.status %> | <%= p.session_count %> sessions | <%= p.workflow_count %> workflows</span>
+                  <span class="project-item__foot"><%= p.activityLabel %></span>
+                </a>
+              </div>
+              <form method="post" action="/api/projects/<%= p.id %>/favorite" class="project-item__pin-form">
+                <input type="hidden" name="favorite" value="1" />
+                <input type="hidden" name="return_to" value="<%= tabHref(activeTab) %>" />
+                <button type="submit" class="project-item__pin-btn" aria-label="Add to favourites" title="Add to favourites">
+                  <svg class="project-item__pin-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <path d="M9 3h6l.8 5.2c.1.6.4 1.2.9 1.6l1.8 1.5c.3.2.5.6.5 1v1.2H14l-1 8-1-8H4.8v-1.2c0-.4.2-.7.5-1l1.8-1.5c.5-.4.8-1 .9-1.6L9 3zm1.8 1.8-.5 3.4c-.2 1-.6 1.9-1.3 2.7l-.7.7h7.4l-.7-.7c-.7-.7-1.1-1.7-1.3-2.7l-.5-3.4h-2.4z"></path>
+                  </svg>
+                </button>
+              </form>
+              <form method="post" action="/api/projects/<%= p.id %>/archive" class="project-item__archive-form">
+                <input type="hidden" name="archived" value="1" />
+                <input type="hidden" name="return_to" value="<%= tabHref(activeTab) %>" />
+                <button type="submit" class="project-item__archive-btn" aria-label="Archive project" title="Archive">Archive</button>
+              </form>
+            </div>
           <% }) %>
         </div>
       </section>
-    </aside>
 
-    <main class="workspace">
-      <header class="topbar">
-        <div>
-          <div class="eyebrow">Project Detail</div>
-          <h1><%= project.name %></h1>
-          <p><%= project.description || 'No description yet.' %></p>
-          <div class="tag-row">
-            <% (project.tags || []).forEach(function(tag) { %>
-              <span class="chip"><%= tag %></span>
+      <% if (archivedProjects.length) { %>
+        <section class="sidebar-section sidebar-section--collapsible" data-sidebar-collapsible data-sidebar-section-key="archived" data-project-section>
+          <button type="button" class="sidebar-section__titlebar" data-sidebar-collapse aria-expanded="true">
+            <span class="sidebar-section__title">Archived</span>
+            <span class="sidebar-section__chevron" aria-hidden="true">▾</span>
+          </button>
+          <div class="project-list" data-project-group data-sidebar-body>
+            <% archivedProjects.forEach(function(p) { %>
+              <div class="project-item" data-project-item data-project-search="<%= projectSearchText(p) %>">
+                <div class="project-item__content">
+                  <a class="project-item__link" href="/project/<%= p.id %>">
+                    <span class="project-item__top">
+                      <strong><%= p.name %></strong>
+                      <span class="badge badge-neutral">Archived</span>
+                    </span>
+                    <span class="project-item__sub"><%= p.status %> | <%= p.session_count %> sessions | <%= p.workflow_count %> workflows</span>
+                    <span class="project-item__foot"><%= p.activityLabel %></span>
+                  </a>
+                </div>
+                <form method="post" action="/api/projects/<%= p.id %>/archive" class="project-item__archive-form">
+                  <input type="hidden" name="archived" value="0" />
+                  <input type="hidden" name="return_to" value="<%= tabHref(activeTab) %>" />
+                  <button type="submit" class="project-item__archive-btn" aria-label="Unarchive project" title="Unarchive">Unarchive</button>
+                </form>
+              </div>
             <% }) %>
           </div>
+        </section>
+      <% } %>
+
+      <div class="project-empty" data-project-empty hidden>No projects match your search.</div>
+    </aside>
+
+    <div class="sidebar-backdrop" data-sidebar-backdrop></div>
+
+    <main class="workspace" data-project-workspace>
+      <header class="topbar">
+        <div>
+          <h1><%= project.name %></h1>
+          <p><%= project.description || 'No description yet.' %></p>
         </div>
         <div class="topbar__meta">
+          <form method="post" action="/logout" class="topbar__logout-form">
+            <button type="submit" class="btn btn-danger">Logout</button>
+          </form>
+          <button type="button" class="btn sidebar-toggle" data-sidebar-toggle aria-controls="project_sidebar" aria-expanded="false">Projects</button>
           <span class="chip chip-success"><%= project.status %></span>
           <span class="chip"><%= stats.sessionCount %> sessions</span>
           <span class="chip"><%= stats.workflowCount %> workflows</span>
@@ -67,203 +226,214 @@
       </header>
 
       <nav class="tabs" aria-label="Project sections">
-        <a class="tab tab--active" href="#conversations">Conversations</a>
-        <a class="tab" href="#workflows">Workflows</a>
-        <a class="tab" href="#memory">Memory</a>
-        <a class="tab" href="#files">Files</a>
-        <a class="tab" href="#logs">Logs</a>
-        <a class="tab" href="#settings">Settings</a>
+        <% projectTabs.forEach(function(tab) { %>
+          <a class="tab <%= activeTab === tab ? 'tab--active' : '' %> <%= tab === 'conversations' || tab === 'main-agent' ? 'tab--chat' : 'tab--utility' %>" href="<%= tabHref(tab) %>"><%= tabLabels[tab] || tab %></a>
+        <% }) %>
       </nav>
 
-      <section class="grid grid--hero" id="overview">
-        <article class="card card--hero">
-          <div class="card__header">
-            <div>
-              <div class="eyebrow">Session</div>
-              <h2><%= currentSession ? currentSession.title : 'No session selected' %></h2>
-            </div>
-            <span class="badge badge-accent"><%= currentSession ? currentSession.state : 'idle' %></span>
-          </div>
-          <p class="lede">Use the chat panel to route a structured prompt through the selected agent and workflow.</p>
-
-          <div class="metric-grid metric-grid--compact">
-            <div class="metric">
-              <strong><%= stats.sessionCount %></strong>
-              <span>Sessions</span>
-            </div>
-            <div class="metric">
-              <strong><%= stats.workflowCount %></strong>
-              <span>Workflows</span>
-            </div>
-            <div class="metric">
-              <strong><%= stats.messageCount %></strong>
-              <span>Messages</span>
-            </div>
-            <div class="metric">
-              <strong><%= stats.artifactCount %></strong>
-              <span>Artifacts</span>
-            </div>
-          </div>
-        </article>
-
-        <article class="card">
-          <div class="card__header">
-            <div>
-              <div class="eyebrow">Status Panel</div>
-              <h2>Operational snapshot</h2>
-            </div>
-          </div>
-          <dl class="status-list">
-            <div class="status-row">
-              <dt>Deployment status</dt>
-              <dd><%= project.status %></dd>
-            </div>
-            <div class="status-row">
-              <dt>Active session</dt>
-              <dd><%= currentSession ? currentSession.id : 'none yet' %></dd>
-            </div>
-            <div class="status-row">
-              <dt>Latest workflow</dt>
-              <dd><%= stats.latestWorkflow ? stats.latestWorkflow.name : 'none yet' %></dd>
-            </div>
-            <div class="status-row">
-              <dt>Recent activity</dt>
-              <dd><%= formatRelativeTime(project.last_activity || project.created_at) %></dd>
-            </div>
-            <div class="status-row">
-              <dt>Last log entry</dt>
-              <dd><%= stats.latestLog ? stats.latestLog.message : 'no logs yet' %></dd>
-            </div>
-          </dl>
-          <div class="state-chips">
-            <% if (Object.keys(stats.workflowStates).length) { %>
-              <% Object.entries(stats.workflowStates).forEach(function(entry) { %>
-                <span class="chip"><%= entry[0] %>: <%= entry[1] %></span>
-              <% }) %>
-            <% } %>
-          </div>
-        </article>
-      </section>
-
-      <section class="project-grid">
-        <div class="main-column">
-          <article class="card" id="conversations">
+      <% if (activeTab === 'overview') { %>
+        <section class="grid grid--hero">
+          <article class="card card--hero">
             <div class="card__header">
               <div>
-                <div class="eyebrow">Agent Chat</div>
-                <h2>Route a task</h2>
+                <div class="eyebrow">Session</div>
+                <h2><%= currentSession ? currentSession.title : 'No session selected' %></h2>
               </div>
-              <span class="badge badge-neutral"><%= agents.length %> agents</span>
+              <span class="badge badge-accent"><%= currentSession ? currentSession.state : 'idle' %></span>
             </div>
+            <p class="lede">This view summarizes the project and links you into the focused tabs below. Use Conversations for Codex or agent routing.</p>
 
-            <form method="post" action="/api/project/<%= project.id %>/message" class="stack form-grid">
-              <div class="field">
-                <label for="session_id">Session</label>
-                <select id="session_id" name="session_id">
-                  <option value="">New session</option>
-                  <% project.sessions.forEach(function(session) { %>
-                    <option value="<%= session.id %>" <%= activeSession === session.id ? 'selected' : '' %>><%= session.title %> | <%= session.state %> | <%= session.id %></option>
-                  <% }) %>
-                </select>
+            <div class="metric-grid metric-grid--compact">
+              <div class="metric">
+                <strong><%= stats.sessionCount %></strong>
+                <span>Sessions</span>
               </div>
-
-              <div class="field">
-                <label for="agent_id">Agent</label>
-                <select id="agent_id" name="agent_id">
-                  <option value="">(none/default)</option>
-                  <% agents.forEach(function(agent) { %>
-                    <option value="<%= agent.id %>"><%= agent.name %> | <%= agent.role %> | <%= agent.kind %></option>
-                  <% }) %>
-                </select>
+              <div class="metric">
+                <strong><%= stats.workflowCount %></strong>
+                <span>Workflows</span>
               </div>
-
-              <div class="field">
-                <label for="workflow_id">Workflow</label>
-                <select id="workflow_id" name="workflow_id">
-                  <option value="">(none)</option>
-                  <% project.workflows.forEach(function(workflow) { %>
-                    <option value="<%= workflow.id %>"><%= workflow.name %> | <%= workflow.state %></option>
-                  <% }) %>
-                </select>
+              <div class="metric">
+                <strong><%= stats.messageCount %></strong>
+                <span>Messages</span>
               </div>
-
-              <div class="field">
-                <label for="message_type">Message type</label>
-                <select id="message_type" name="message_type">
-                  <option>prompt</option>
-                  <option>continue</option>
-                  <option>summarise</option>
-                  <option>retry</option>
-                  <option>stop</option>
-                </select>
+              <div class="metric">
+                <strong><%= stats.artifactCount %></strong>
+                <span>Artifacts</span>
               </div>
-
-              <div class="field">
-                <label for="priority">Priority</label>
-                <select id="priority" name="priority">
-                  <option>low</option>
-                  <option selected>normal</option>
-                  <option>high</option>
-                  <option>critical</option>
-                </select>
-              </div>
-
-              <div class="field field--full">
-                <label for="text">Text</label>
-                <textarea id="text" name="text" placeholder="Prompt text"></textarea>
-              </div>
-
-              <div class="field field--full">
-                <label for="payload_json">Structured JSON payload</label>
-                <textarea id="payload_json" name="payload_json" placeholder='{"task":"...","params":{}}'></textarea>
-              </div>
-
-              <div class="actions actions--chat">
-                <button type="submit" class="btn btn-primary">Run</button>
-                <button type="submit" name="message_type" value="continue" class="btn">Continue</button>
-                <button type="submit" name="message_type" value="summarise" class="btn">Summarise</button>
-                <button type="submit" name="message_type" value="retry" class="btn">Retry</button>
-                <button type="submit" name="message_type" value="stop" class="btn btn-danger">Stop</button>
-              </div>
-            </form>
+            </div>
+            <div class="actions" style="margin-top: 16px;">
+              <a class="btn btn-primary" href="<%= tabHref('conversations') %>">Open Conversations</a>
+              <a class="btn" href="<%= tabHref('workflows') %>">View Workflows</a>
+            </div>
           </article>
 
-          <article class="card" id="conversations-history">
+          <article class="card">
             <div class="card__header">
               <div>
-                <div class="eyebrow">Chat History</div>
-                <h2>Session timeline</h2>
+                <div class="eyebrow">Status Panel</div>
+                <h2>Operational snapshot</h2>
               </div>
-              <span class="badge badge-neutral"><%= messages.length %> messages</span>
+            </div>
+            <dl class="status-list">
+              <div class="status-row">
+                <dt>Deployment status</dt>
+                <dd><%= project.status %></dd>
+              </div>
+              <div class="status-row">
+                <dt>Active session</dt>
+                <dd><%= currentSession ? currentSession.id : 'none yet' %></dd>
+              </div>
+              <div class="status-row">
+                <dt>Latest workflow</dt>
+                <dd><%= stats.latestWorkflow ? stats.latestWorkflow.name : 'none yet' %></dd>
+              </div>
+              <div class="status-row">
+                <dt>Recent activity</dt>
+                <dd><%= formatRelativeTime(project.last_activity || project.created_at) %></dd>
+              </div>
+              <div class="status-row">
+                <dt>Last log entry</dt>
+                <dd><%= stats.latestLog ? stats.latestLog.message : 'no logs yet' %></dd>
+              </div>
+            </dl>
+            <div class="state-chips">
+              <% if (Object.keys(stats.workflowStates).length) { %>
+                <% Object.entries(stats.workflowStates).forEach(function(entry) { %>
+                  <span class="chip"><%= entry[0] %>: <%= entry[1] %></span>
+                <% }) %>
+              <% } %>
+            </div>
+          </article>
+        </section>
+
+        <section class="card card--usage card--usage-island" data-usage-panel data-usage-default-range="24h">
+          <div class="card__header">
+            <div>
+              <div class="eyebrow">Usage</div>
+              <h2>Project token use</h2>
+            </div>
+            <div class="usage-range-toggle" role="tablist" aria-label="Project usage range">
+              <button type="button" class="chip" data-usage-range="24h">24h</button>
+              <button type="button" class="chip" data-usage-range="7d">7d</button>
+              <button type="button" class="chip" data-usage-range="30d">30d</button>
+            </div>
+          </div>
+          <% if (projectUsage && (projectUsage.todayTotal || projectUsage.weeklyTotal || projectUsage.monthlyTotal)) { %>
+            <div class="usage-summary">
+              <strong><%= projectUsage.todayTotal.toLocaleString('en-US') %> tokens today</strong>
+              <span><%= projectUsage.weeklyTotal.toLocaleString('en-US') %> tokens this week</span>
+            </div>
+            <div
+              class="usage-chart"
+              data-usage-chart
+              data-usage-default-range="24h"
+              data-usage-series-24h='<%- JSON.stringify(projectUsage.series24h) %>'
+              data-usage-labels-24h='<%- JSON.stringify(projectUsage.labels24h) %>'
+              data-usage-series-7d='<%- JSON.stringify(projectUsage.series7d) %>'
+              data-usage-labels-7d='<%- JSON.stringify(projectUsage.labels7d) %>'
+              data-usage-series-30d='<%- JSON.stringify(projectUsage.series30d) %>'
+              data-usage-labels-30d='<%- JSON.stringify(projectUsage.labels30d) %>'
+            ></div>
+          <% } else { %>
+            <div class="empty-state">
+              <strong>No usage yet.</strong>
+              <p>Token usage will appear here once this project starts sending messages.</p>
+            </div>
+          <% } %>
+        </section>
+      <% } else if (activeTab === 'conversations' || activeTab === 'main-agent') { %>
+        <section class="chat-shell">
+          <article class="card chat-panel">
+            <div class="chat-panel__header">
+              <div>
+                <div class="eyebrow">Conversation</div>
+                <h2><%= conversationAgentLabel %></h2>
+              </div>
             </div>
 
-            <% if (messages.length) { %>
-              <div class="timeline">
+            <div class="chat-thread">
+              <% if (messages.length) { %>
                 <% messages.forEach(function(message) { %>
-                  <article class="timeline-item <%= message.direction === 'outbound' ? 'timeline-item--outbound' : 'timeline-item--inbound' %>">
-                    <div class="timeline-item__meta">
-                      <span class="timeline-item__role"><%= message.direction === 'outbound' ? 'Operator' : (message.agent_id || 'Agent') %></span>
-                      <span><%= message.message_type %></span>
-                      <span><%= message.priority %></span>
-                      <span><%= message.status %></span>
-                      <span><%= message.created_at %></span>
+                  <% const isOutbound = message.direction === 'outbound'; %>
+                  <% const messageText = message.content || '(empty)'; %>
+                  <% const messagePreview = messageText.length > 2500 ? messageText.slice(0, 2500).replace(/\s+$/, '') : ''; %>
+                  <article class="chat-row <%= isOutbound ? 'chat-row--outbound' : 'chat-row--inbound' %>" data-message-id="<%= message.id %>">
+                    <div class="chat-row__content">
+                      <div class="chat-bubble">
+                        <pre class="chat-bubble__body <%= messageText.length > 2500 ? 'chat-bubble__body--preview' : '' %>"><%= messagePreview ? messagePreview + '...' : messageText %></pre>
+                        <% if (messageText.length > 2500) { %>
+                          <details class="chat-bubble__details chat-bubble__details--message">
+                            <summary class="chat-bubble__summary">show more</summary>
+                            <pre class="chat-bubble__body chat-bubble__body--full"><%= messageText %></pre>
+                          </details>
+                        <% } %>
+                        <% if (message.error_text) { %>
+                          <details class="chat-bubble__details chat-bubble__details--error">
+                            <summary class="chat-bubble__summary">show error</summary>
+                            <div class="chat-bubble__error"><%= message.error_text %></div>
+                          </details>
+                        <% } %>
+                      </div>
+                      <div class="chat-row__stamp" title="<%= formatDateTime(message.created_at) %>"><%= formatDateTime(message.created_at) %> · <%= formatRelativeTime(message.created_at) %></div>
                     </div>
-                    <div class="timeline-item__body"><%= message.content || '(empty)' %></div>
-                    <% if (message.error_text) { %>
-                      <div class="timeline-item__error"><%= message.error_text %></div>
-                    <% } %>
                   </article>
+                <% }) %>
+              <% } else { %>
+                <div class="empty-state">
+                  <strong>No messages yet.</strong>
+                  <p>Send the first prompt to OpenClaw and it will reply inline here.</p>
+                </div>
+              <% } %>
+            </div>
+
+            <form method="post" action="/api/project/<%= project.id %>/message" class="chat-composer" id="message_form">
+              <div class="chat-composer__grid">
+                <input type="hidden" id="session_id" name="session_id" value="<%= activeSession || (currentSession ? currentSession.id : '') %>" />
+                <input type="hidden" id="agent_id" name="agent_id" value="<%= conversationAgentId || 'agent-openclaw-main' %>" />
+
+                <div class="field field--full">
+                  <textarea id="text" name="text" placeholder="Type your message…" rows="3"></textarea>
+                </div>
+              </div>
+
+              <div class="chat-composer__actions">
+                <button type="submit" class="btn btn-primary" name="message_type" value="prompt">Send</button>
+              </div>
+            </form>
+
+          </article>
+
+          <aside class="card chat-rail">
+            <div class="card__header">
+              <div>
+                <div class="eyebrow">Latest files</div>
+                <h2>Recent changes</h2>
+              </div>
+              <% const recentArtifacts = (projectMemory && projectMemory.recentArtifacts) || []; %>
+              <span class="badge badge-neutral"><%= recentArtifacts.length %> items</span>
+            </div>
+
+            <% if (recentArtifacts.length) { %>
+              <div class="artifact-list artifact-list--compact">
+                <% recentArtifacts.forEach(function(artifact) { %>
+                  <div class="artifact-item">
+                    <strong><%= fileNameFromPath(artifact.file_path) %></strong>
+                    <span><%= formatRelativeTime(artifact.created_at) %></span>
+                    <code><%= artifact.file_path %></code>
+                  </div>
                 <% }) %>
               </div>
             <% } else { %>
               <div class="empty-state">
-                <strong>No messages yet.</strong>
-                <p>Pick a session and send the first prompt to seed the conversation history.</p>
+                <strong>No recent files yet.</strong>
+                <p>Files produced by workflows and agent runs will appear here.</p>
               </div>
             <% } %>
-          </article>
-
-          <article class="card" id="workflows">
+          </aside>
+        </section>
+      <% } else if (activeTab === 'workflows') { %>
+        <section class="grid grid--two">
+          <article class="card">
             <div class="card__header">
               <div>
                 <div class="eyebrow">Workflow Controls</div>
@@ -292,6 +462,26 @@
               </div>
             </form>
 
+            <div class="state-chips">
+              <% if (Object.keys(stats.workflowStates).length) { %>
+                <% Object.entries(stats.workflowStates).forEach(function(entry) { %>
+                  <span class="chip"><%= entry[0] %>: <%= entry[1] %></span>
+                <% }) %>
+              <% } else { %>
+                <span class="chip">No workflows yet</span>
+              <% } %>
+            </div>
+          </article>
+
+          <article class="card">
+            <div class="card__header">
+              <div>
+                <div class="eyebrow">Workflow List</div>
+                <h2>Current workflows</h2>
+              </div>
+              <span class="badge badge-neutral"><%= project.workflows.length %> items</span>
+            </div>
+
             <% if (project.workflows.length) { %>
               <div class="workflow-list">
                 <% project.workflows.forEach(function(workflow) { %>
@@ -319,10 +509,10 @@
               </div>
             <% } %>
           </article>
-        </div>
-
-        <aside class="side-column">
-          <article class="card" id="memory">
+        </section>
+      <% } else if (activeTab === 'memory') { %>
+        <section class="grid grid--two">
+          <article class="card">
             <div class="card__header">
               <div>
                 <div class="eyebrow">Memory</div>
@@ -366,8 +556,10 @@
               <% }) %>
             </div>
           </article>
-
-          <article class="card" id="files">
+        </section>
+      <% } else if (activeTab === 'files') { %>
+        <section class="grid">
+          <article class="card">
             <div class="card__header">
               <div>
                 <div class="eyebrow">Files</div>
@@ -393,8 +585,10 @@
               </div>
             <% } %>
           </article>
-
-          <article class="card" id="logs">
+        </section>
+      <% } else if (activeTab === 'logs') { %>
+        <section class="grid">
+          <article class="card">
             <div class="card__header">
               <div>
                 <div class="eyebrow">Logs</div>
@@ -428,8 +622,10 @@
               </div>
             <% } %>
           </article>
-
-          <article class="card" id="settings">
+        </section>
+      <% } else if (activeTab === 'settings') { %>
+        <section class="grid grid--two">
+          <article class="card">
             <div class="card__header">
               <div>
                 <div class="eyebrow">Settings</div>
@@ -440,6 +636,17 @@
               <div><span>Project id</span><code><%= project.id %></code></div>
               <div><span>Created</span><code><%= project.created_at %></code></div>
               <div><span>Last activity</span><code><%= formatRelativeTime(project.last_activity || project.created_at) %></code></div>
+              <div><span>Session count</span><code><%= stats.sessionCount %></code></div>
+              <div><span>Workflow count</span><code><%= stats.workflowCount %></code></div>
+            </div>
+          </article>
+
+          <article class="card">
+            <div class="card__header">
+              <div>
+                <div class="eyebrow">Agents</div>
+                <h2>Registry</h2>
+              </div>
             </div>
             <div class="agent-grid agent-grid--compact">
               <% project.agents.forEach(function(agent) { %>
@@ -451,9 +658,13 @@
               <% }) %>
             </div>
           </article>
-        </aside>
-      </section>
+        </section>
+      <% } %>
     </main>
   </div>
+  <script src="/public/sidebar-sections.js" defer></script>
+  <script src="/public/home-usage.js" defer></script>
+  <script src="/public/project-page.js" defer></script>
+  <script src="/public/pwa-register.js" defer></script>
 </body>
 </html>

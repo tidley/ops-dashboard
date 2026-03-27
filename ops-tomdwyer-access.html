@@ -1,0 +1,622 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Ops Access Bootstrap</title>
+  <meta name="color-scheme" content="dark light" />
+  <style>
+    :root {
+      --bg: #07111f;
+      --bg2: #0b1729;
+      --panel: rgba(10, 18, 32, 0.88);
+      --panel-2: rgba(13, 23, 40, 0.88);
+      --line: rgba(147, 197, 253, 0.18);
+      --text: #e5eefc;
+      --muted: #97a7c1;
+      --accent: #7dd3fc;
+      --accent-2: #a78bfa;
+      --good: #34d399;
+      --warn: #fbbf24;
+      --bad: #f87171;
+      --shadow: 0 22px 80px rgba(2, 6, 23, 0.45);
+      --radius: 18px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      --sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { min-height: 100%; }
+    body {
+      margin: 0;
+      font-family: var(--sans);
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(125, 211, 252, 0.18), transparent 30%),
+        radial-gradient(circle at top right, rgba(167, 139, 250, 0.16), transparent 28%),
+        linear-gradient(180deg, var(--bg), var(--bg2));
+    }
+
+    .wrap {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 28px 18px 40px;
+    }
+
+    .hero {
+      display: grid;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .eyebrow {
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--accent);
+      font-size: 0.72rem;
+      font-weight: 700;
+    }
+
+    h1, h2, h3, p { margin: 0; }
+    h1 { font-size: clamp(2rem, 4vw, 3.5rem); line-height: 1.02; }
+    p { color: var(--muted); line-height: 1.5; }
+
+    .note {
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+      width: fit-content;
+      border: 1px solid var(--line);
+      background: rgba(15, 23, 42, 0.56);
+      color: var(--text);
+      padding: 9px 12px;
+      border-radius: 999px;
+      font-size: 0.92rem;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
+      gap: 16px;
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, var(--panel), var(--panel-2));
+      box-shadow: var(--shadow);
+      border-radius: var(--radius);
+      padding: 18px;
+      backdrop-filter: blur(14px);
+    }
+
+    .stack { display: grid; gap: 14px; }
+    .row { display: grid; gap: 10px; }
+    .row--two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .field { display: grid; gap: 8px; }
+    label { font-size: 0.9rem; color: #c9d6ea; }
+    input, textarea, button, select {
+      font: inherit;
+      border-radius: 14px;
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      background: rgba(2, 6, 23, 0.4);
+      color: var(--text);
+    }
+    input, textarea, select {
+      width: 100%;
+      padding: 12px 14px;
+      outline: none;
+    }
+    textarea { min-height: 190px; resize: vertical; font-family: var(--mono); font-size: 0.86rem; }
+    input:focus, textarea:focus, select:focus {
+      border-color: rgba(125, 211, 252, 0.65);
+      box-shadow: 0 0 0 3px rgba(125, 211, 252, 0.14);
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
+    button {
+      cursor: pointer;
+      padding: 11px 14px;
+      font-weight: 700;
+    }
+    .primary {
+      background: linear-gradient(135deg, #38bdf8, #818cf8);
+      color: #04111f;
+      border: 0;
+    }
+    .secondary { background: rgba(15, 23, 42, 0.8); }
+    .ghost { background: transparent; }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 11px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      font-size: 0.86rem;
+      color: var(--text);
+      width: fit-content;
+    }
+    .pill.good { border-color: rgba(52, 211, 153, 0.35); color: #bbf7d0; }
+    .pill.warn { border-color: rgba(251, 191, 36, 0.35); color: #fde68a; }
+    .pill.bad { border-color: rgba(248, 113, 113, 0.35); color: #fecaca; }
+
+    pre {
+      margin: 0;
+      padding: 14px;
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      background: rgba(2, 6, 23, 0.5);
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: var(--mono);
+      font-size: 0.85rem;
+      min-height: 220px;
+    }
+
+    .meta {
+      display: grid;
+      gap: 8px;
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+    .meta code {
+      color: #dbeafe;
+      word-break: break-all;
+    }
+
+    .split {
+      display: grid;
+      gap: 12px;
+    }
+
+    .small {
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+
+    @media (max-width: 900px) {
+      .grid { grid-template-columns: 1fr; }
+      .row--two { grid-template-columns: 1fr; }
+    }
+  </style>
+  <script type="module">
+    import { nip17, nip19, getPublicKey } from 'https://esm.sh/nostr-tools@2.23.3';
+
+    const ACCESS_APP = 'ops-dashboard.access.v1';
+    const DEFAULT_TTL_MS = 10 * 60 * 1000;
+
+    const els = {};
+    const state = {
+      gatewayPubkey: '',
+      gatewayNpub: '',
+      requesterPubkey: '',
+      lastEvent: null,
+      lastResult: null,
+    };
+
+    function $(id) {
+      return document.getElementById(id);
+    }
+
+    function loadPref(key, fallback = '') {
+      try { return localStorage.getItem(key) || fallback; } catch { return fallback; }
+    }
+
+    function savePref(key, value) {
+      try { localStorage.setItem(key, value); } catch {}
+    }
+
+    function nowIso() {
+      return new Date().toISOString();
+    }
+
+    function randomSessionId() {
+      if (crypto?.randomUUID) return `acc-${crypto.randomUUID()}`;
+      return `acc-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    }
+
+    function randomNonce() {
+      if (crypto?.randomUUID) return crypto.randomUUID();
+      return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    }
+
+    function parsePubkeyInput(value) {
+      const raw = `${value || ''}`.trim();
+      if (!raw) return '';
+      try {
+        const decoded = nip19.decode(raw);
+        if (decoded.type === 'npub') return decoded.data;
+      } catch {
+        // ignore
+      }
+      if (/^[0-9a-f]{64}$/i.test(raw)) return raw.toLowerCase();
+      return '';
+    }
+
+    function normalizeGatewayTarget(value) {
+      const raw = `${value || ''}`.trim();
+      if (!raw) return { pubkey: '', npub: '' };
+      try {
+        const decoded = nip19.decode(raw);
+        if (decoded.type === 'npub') {
+          return { pubkey: decoded.data, npub: raw };
+        }
+      } catch {
+        // ignore
+      }
+      if (/^[0-9a-f]{64}$/i.test(raw)) {
+        return { pubkey: raw.toLowerCase(), npub: nip19.npubEncode(raw.toLowerCase()) };
+      }
+      return { pubkey: '', npub: '' };
+    }
+
+    function buildPayload(requesterPubkey) {
+      const ttlMs = Number(els.ttl.value || DEFAULT_TTL_MS);
+      const issuedAt = new Date();
+      const expiresAt = new Date(issuedAt.getTime() + ttlMs);
+      return {
+        app: ACCESS_APP,
+        type: 'bootstrap_request',
+        pubkey: requesterPubkey,
+        session_id: `${els.sessionId.value || randomSessionId()}`.trim(),
+        nonce: `${els.nonce.value || randomNonce()}`.trim(),
+        scope: `${els.scope.value || 'dashboard'}`.trim() || 'dashboard',
+        issued_at: issuedAt.toISOString(),
+        expires_at: expiresAt.toISOString(),
+      };
+    }
+
+    function renderStatus(kind, text) {
+      els.status.className = `pill ${kind || ''}`.trim();
+      els.status.textContent = text;
+    }
+
+    function renderJson(value) {
+      els.output.textContent = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+    }
+
+    function hydrate() {
+      els.bootstrapUrl.value = loadPref('ops.bootstrapUrl', `${location.origin}/api/access/bootstrap`);
+      els.gateway.value = loadPref('ops.gatewayTarget', '');
+      els.sessionId.value = loadPref('ops.sessionId', '');
+      els.scope.value = loadPref('ops.scope', 'dashboard');
+      els.ttl.value = loadPref('ops.ttl', String(DEFAULT_TTL_MS));
+      els.nsec.value = loadPref('ops.nsec', '');
+      els.useNip07.checked = loadPref('ops.useNip07', '0') === '1';
+      els.challenge.value = loadPref('ops.challenge', '');
+      els.recipients.value = loadPref('ops.recipients', '');
+      els.requesterHint.textContent = '(not loaded)';
+      renderStatus('warn', 'Idle');
+      renderJson('Waiting for a bootstrap request...');
+    }
+
+    function wirePersistence() {
+      [
+        ['bootstrapUrl', els.bootstrapUrl],
+        ['gatewayTarget', els.gateway],
+        ['sessionId', els.sessionId],
+        ['scope', els.scope],
+        ['ttl', els.ttl],
+        ['nsec', els.nsec],
+        ['challenge', els.challenge],
+        ['recipients', els.recipients],
+      ].forEach(([key, el]) => {
+        el.addEventListener('input', () => savePref(`ops.${key}`, el.value));
+      });
+      els.useNip07.addEventListener('change', () => savePref('ops.useNip07', els.useNip07.checked ? '1' : '0'));
+    }
+
+    function setGatewayFromInput() {
+      const normalized = normalizeGatewayTarget(els.gateway.value);
+      state.gatewayPubkey = normalized.pubkey;
+      state.gatewayNpub = normalized.npub;
+      els.gatewayMeta.textContent = normalized.npub || '(invalid gateway key)';
+      if (!normalized.pubkey) {
+        throw new Error('Invalid gateway pubkey / npub');
+      }
+      return normalized;
+    }
+
+    async function buildEventWithNsec() {
+      const secret = `${els.nsec.value || ''}`.trim();
+      if (!secret) throw new Error('Paste an nsec first');
+
+      const gateway = setGatewayFromInput();
+      const decoded = nip19.decode(secret);
+      if (decoded.type !== 'nsec') throw new Error('nsec input must be a valid nsec');
+      const requesterSk = decoded.data;
+      const requesterPubkey = getPublicKey(requesterSk);
+      state.requesterPubkey = requesterPubkey;
+      els.requesterHint.textContent = requesterPubkey;
+
+      const payload = buildPayload(requesterPubkey);
+      const event = nip17.wrapEvent(requesterSk, { publicKey: gateway.pubkey }, JSON.stringify(payload));
+      state.lastEvent = event;
+      return { payload, event };
+    }
+
+    async function buildEventWithNip07() {
+      if (!window.nostr?.getPublicKey || !window.nostr?.signEvent) {
+        throw new Error('NIP-07 signer not available');
+      }
+      if (!window.nostr.nip44?.encrypt) {
+        throw new Error('NIP-07 signer must expose nip44.encrypt for NIP-17 bootstrap');
+      }
+
+      const gateway = setGatewayFromInput();
+      const requesterPubkey = await window.nostr.getPublicKey();
+      state.requesterPubkey = requesterPubkey;
+      els.requesterHint.textContent = requesterPubkey;
+      const payload = buildPayload(requesterPubkey);
+      const draft = {
+        kind: 1059,
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [['p', gateway.pubkey]],
+        content: await window.nostr.nip44.encrypt(gateway.pubkey, JSON.stringify(payload)),
+      };
+      const signed = await window.nostr.signEvent(draft);
+      if (!signed || !signed.sig) throw new Error('Signer did not return a signed event');
+      state.lastEvent = signed;
+      return { payload, event: signed };
+    }
+
+    async function submitBootstrap() {
+      const bootstrapUrl = `${els.bootstrapUrl.value || ''}`.trim();
+      if (!bootstrapUrl) throw new Error('Set a bootstrap URL');
+
+      const useNip07 = els.useNip07.checked;
+      const result = useNip07 ? await buildEventWithNip07() : await buildEventWithNsec();
+      const response = await fetch(bootstrapUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify({ event: result.event }),
+      });
+      const json = await response.json().catch(() => ({}));
+      state.lastResult = json;
+      renderJson({
+        bootstrapUrl,
+        mode: useNip07 ? 'nip07' : 'nsec',
+        payload: result.payload,
+        responseStatus: response.status,
+        response: json,
+      });
+      if (!response.ok || !json.ok) {
+        renderStatus('bad', json.error || `bootstrap_failed_${response.status}`);
+        throw new Error(json.error || `bootstrap_failed_${response.status}`);
+      }
+      renderStatus('good', 'Bootstrap accepted');
+      return json;
+    }
+
+    function wireActions() {
+      els.nsecMode.addEventListener('click', () => {
+        els.useNip07.checked = false;
+        savePref('ops.useNip07', '0');
+      });
+      els.nip07Mode.addEventListener('click', () => {
+        els.useNip07.checked = true;
+        savePref('ops.useNip07', '1');
+      });
+
+      els.loadNip07.addEventListener('click', async () => {
+        try {
+          if (!window.nostr?.getPublicKey) throw new Error('No NIP-07 signer found');
+          const pubkey = await window.nostr.getPublicKey();
+          els.requesterHint.textContent = pubkey;
+          renderStatus('good', 'NIP-07 signer available');
+        } catch (err) {
+          renderStatus('bad', err.message || String(err));
+        }
+      });
+
+      els.generateBtn.addEventListener('click', async () => {
+        try {
+          setGatewayFromInput();
+          const payload = buildPayload('pending');
+          renderJson({
+            mode: els.useNip07.checked ? 'nip07' : 'nsec',
+            gateway: state.gatewayNpub || state.gatewayPubkey,
+            payload,
+          });
+          renderStatus('warn', 'Draft generated');
+        } catch (err) {
+          renderStatus('bad', err.message || String(err));
+        }
+      });
+
+      els.submitBtn.addEventListener('click', async () => {
+        els.submitBtn.disabled = true;
+        renderStatus('warn', 'Submitting...');
+        try {
+          const response = await submitBootstrap();
+          renderJson({
+            ok: true,
+            session: response.session,
+            signal_url: response.signal_url,
+            proxy_url: response.proxy_url,
+            gateway_pubkey: response.gateway_pubkey,
+            gateway_npub: response.gateway_npub,
+          });
+        } catch (err) {
+          if (!els.status.classList.contains('bad')) {
+            renderStatus('bad', err.message || String(err));
+          }
+        } finally {
+          els.submitBtn.disabled = false;
+        }
+      });
+
+      els.fillExample.addEventListener('click', () => {
+        els.scope.value = 'dashboard';
+        els.nonce.value = randomNonce();
+        els.sessionId.value = randomSessionId();
+        savePref('ops.scope', els.scope.value);
+        savePref('ops.nonce', els.nonce.value);
+        savePref('ops.sessionId', els.sessionId.value);
+        renderStatus('warn', 'Example values filled');
+      });
+
+      els.resetBtn.addEventListener('click', () => {
+        localStorage.removeItem('ops.bootstrapUrl');
+        localStorage.removeItem('ops.gatewayTarget');
+        localStorage.removeItem('ops.sessionId');
+        localStorage.removeItem('ops.scope');
+        localStorage.removeItem('ops.ttl');
+        localStorage.removeItem('ops.nsec');
+        localStorage.removeItem('ops.useNip07');
+        localStorage.removeItem('ops.challenge');
+        localStorage.removeItem('ops.recipients');
+        location.reload();
+      });
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      els.bootstrapUrl = $('bootstrapUrl');
+      els.gateway = $('gateway');
+      els.sessionId = $('sessionId');
+      els.nonce = $('nonce');
+      els.scope = $('scope');
+      els.ttl = $('ttl');
+      els.nsec = $('nsec');
+      els.useNip07 = $('useNip07');
+      els.challenge = $('challenge');
+      els.recipients = $('recipients');
+      els.output = $('output');
+      els.status = $('status');
+      els.requesterHint = $('requesterHint');
+      els.gatewayMeta = $('gatewayMeta');
+      els.nsecMode = $('nsecMode');
+      els.nip07Mode = $('nip07Mode');
+      els.loadNip07 = $('loadNip07');
+      els.generateBtn = $('generateBtn');
+      els.submitBtn = $('submitBtn');
+      els.fillExample = $('fillExample');
+      els.resetBtn = $('resetBtn');
+      hydrate();
+      wirePersistence();
+      wireActions();
+
+      if (window.nostr?.getPublicKey) {
+        window.nostr.getPublicKey().then((pubkey) => {
+          els.requesterHint.textContent = pubkey;
+        }).catch(() => {});
+      }
+    });
+  </script>
+</head>
+<body>
+  <main class="wrap">
+    <section class="hero">
+      <div class="eyebrow">NIP-17 bootstrap</div>
+      <h1>Phone sign-in page for Ops Dashboard</h1>
+      <p>
+        Use this page on <code>ops.tomdwyer.uk</code> to create a signed NIP-17 bootstrap request.
+        It accepts either a pasted <code>nsec</code> or a NIP-07 signer with NIP-44 encryption support.
+      </p>
+      <div class="note">
+        <span>Allowlisted pubkey:</span>
+        <code>npub19at4nqjjymca2lh3v546vcg5ktun3al4c5xu2pts3ewckv0y70ys0gupzr</code>
+      </div>
+    </section>
+
+    <div class="grid">
+      <section class="card stack">
+        <div class="split">
+          <div class="field">
+            <label for="bootstrapUrl">Bootstrap URL</label>
+            <input id="bootstrapUrl" type="url" spellcheck="false" placeholder="https://ops.tomdwyer.uk/api/access/bootstrap" />
+            <div class="small">This should point at the dashboard access endpoint or a PHP forwarder that reaches it.</div>
+          </div>
+          <div class="field">
+            <label for="gateway">Gateway pubkey or npub</label>
+            <input id="gateway" type="text" spellcheck="false" placeholder="npub1..." />
+            <div class="small">Resolved gateway: <code id="gatewayMeta">(not loaded)</code></div>
+          </div>
+        </div>
+
+        <div class="row row--two">
+          <div class="field">
+            <label for="sessionId">Session ID</label>
+            <input id="sessionId" type="text" spellcheck="false" placeholder="acc-..." />
+          </div>
+          <div class="field">
+            <label for="scope">Scope</label>
+            <input id="scope" type="text" spellcheck="false" value="dashboard" />
+          </div>
+        </div>
+
+        <div class="row row--two">
+          <div class="field">
+            <label for="nonce">Nonce</label>
+            <input id="nonce" type="text" spellcheck="false" placeholder="auto-generated if blank" />
+          </div>
+          <div class="field">
+            <label for="ttl">TTL ms</label>
+            <input id="ttl" type="number" min="1000" step="1000" value="600000" />
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="nsec">nsec</label>
+          <textarea id="nsec" spellcheck="false" placeholder="Paste a local nsec here if you want to sign without NIP-07"></textarea>
+        </div>
+
+        <div class="field">
+          <label>Signing mode</label>
+          <div class="actions">
+            <button id="nsecMode" type="button" class="secondary">Use nsec</button>
+            <button id="nip07Mode" type="button" class="secondary">Use NIP-07</button>
+            <label class="pill">
+              <input id="useNip07" type="checkbox" style="width:auto; margin:0;" />
+              NIP-07 enabled
+            </label>
+            <button id="loadNip07" type="button" class="ghost">Check signer</button>
+          </div>
+          <div class="small">NIP-07 requires <code>window.nostr</code> and <code>nip44.encrypt</code>.</div>
+        </div>
+
+        <div class="actions">
+          <button id="fillExample" type="button" class="secondary">Fill example</button>
+          <button id="generateBtn" type="button" class="secondary">Generate draft</button>
+          <button id="submitBtn" type="button" class="primary">Sign and submit</button>
+          <button id="resetBtn" type="button" class="ghost">Reset saved values</button>
+        </div>
+
+        <div class="meta">
+          <div><span>Status:</span> <span id="status" class="pill warn">Idle</span></div>
+          <div><span>Requester pubkey:</span> <code id="requesterHint">(not loaded)</code></div>
+        </div>
+      </section>
+
+      <section class="card stack">
+        <div class="field">
+          <label for="challenge">Challenge / notes</label>
+          <input id="challenge" type="text" spellcheck="false" placeholder="Optional note for your own tracking" />
+        </div>
+        <div class="field">
+          <label for="recipients">Recipients / context</label>
+          <input id="recipients" type="text" spellcheck="false" placeholder="Optional comma-separated notes" />
+        </div>
+        <div class="field">
+          <label for="output">Output</label>
+          <pre id="output">Waiting for bootstrap request...</pre>
+        </div>
+        <p class="small">
+          If you want this page to also forward requests with PHP, point the bootstrap URL at a small PHP relay that proxies
+          <code>/api/access/bootstrap</code> and the WebRTC signal endpoints to the dashboard backend.
+        </p>
+      </section>
+    </div>
+  </main>
+</body>
+</html>

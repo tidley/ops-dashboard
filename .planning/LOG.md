@@ -9,3 +9,13 @@
 - 2026-03-26 UTC: Added UI sections for General, Pave, and sec06 sub-projects.
 - 2026-03-26 UTC: Created `.planning` folder and initialized STATUS/NOW/NEXT/BACKLOG/DONE/DECISIONS/RISKS/LOG.
 - 2026-03-26 UTC: Refreshed the dashboard shell with a project rail, tabbed project workspace, planning panels, and safer JSON parsing for form payloads.
+- 2026-03-26 UTC: Added true project tabs so each page shows one focused panel instead of the full scroll stack.
+- 2026-03-26 UTC: Added a Codex quick-launch route backed by the OpenAI Responses API.
+- 2026-03-27 UTC: Locked the dashboard behind access-session auth and logout/revocation routes.
+- 2026-03-27 UTC: Added NIP-17 bootstrap/auth with allowlisted pubkeys and access-session cookies.
+- 2026-03-27 UTC: Added browser sign-in paths for NIP-07, Amber / Nostr Connect, and optional `nsec`.
+- 2026-03-27 UTC: Added direct NIP-17 relay signalling and direct browser-to-backend WebRTC peer setup.
+- 2026-03-27 UTC: Added relay access controller, direct peer bootstrap/signalling tests, and access-page e2e coverage.
+- 2026-03-27 UTC: Kept legacy HTTP bootstrap/signal routes for compatibility and debugging.
+- 2026-03-27 UTC: Reworked the dashboard theme to a minimal flat dark style with tighter spacing and simple borders.
+- 2026-03-27 UTC: Added mobile project/sidebar drawers for the home and project pages.

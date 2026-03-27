@@ -2,14 +2,30 @@ const fs = require('fs');
 const path = require('path');
 const Database = require('better-sqlite3');
 
-const DATA_DIR = path.join(__dirname, '..', 'data');
-const DB_PATH = path.join(DATA_DIR, 'dashboard.db');
+const DATA_DIR = process.env.DATA_DIR
+  ? path.resolve(process.env.DATA_DIR)
+  : path.join(__dirname, '..', 'data');
+const DB_PATH = process.env.DB_PATH
+  ? path.resolve(process.env.DB_PATH)
+  : path.join(DATA_DIR, 'dashboard.db');
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
 const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
+
+function getTableColumns(tableName) {
+  return db.prepare(`PRAGMA table_info(${tableName})`).all().map(row => row.name);
+}
+
+function ensureColumns(tableName, columns) {
+  const existing = new Set(getTableColumns(tableName));
+  for (const column of columns) {
+    if (existing.has(column.name)) continue;
+    db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${column.sql}`);
+  }
+}
 
 function initDb() {
   db.exec(`
@@ -42,6 +58,19 @@ function initDb() {
       PRIMARY KEY (project_id, agent_id),
       FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE,
       FOREIGN KEY(agent_id) REFERENCES agents(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS project_state (
+      project_id TEXT PRIMARY KEY,
+      last_opened_at TEXT NOT NULL,
+      last_tab TEXT NOT NULL DEFAULT 'overview',
+      last_session_id TEXT DEFAULT '',
+      openclaw_session_id TEXT DEFAULT '',
+      openclaw_memory_json TEXT NOT NULL DEFAULT '{}',
+      openclaw_bootstrapped_at TEXT DEFAULT '',
+      openclaw_last_seen_at TEXT DEFAULT '',
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS workflows (
@@ -120,7 +149,57 @@ function initDb() {
       value_json TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS access_principals (
+      pubkey TEXT PRIMARY KEY,
+      label TEXT NOT NULL DEFAULT '',
+      role TEXT NOT NULL DEFAULT 'viewer',
+      scope TEXT NOT NULL DEFAULT 'dashboard',
+      allowed INTEGER NOT NULL DEFAULT 1,
+      revoked_at TEXT DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS access_sessions (
+      id TEXT PRIMARY KEY,
+      pubkey TEXT NOT NULL,
+      scope TEXT NOT NULL DEFAULT 'dashboard',
+      state TEXT NOT NULL DEFAULT 'pending',
+      nonce TEXT NOT NULL,
+      issued_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      last_seen_at TEXT DEFAULT '',
+      revoked_at TEXT DEFAULT '',
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS access_replay_cache (
+      session_id TEXT NOT NULL,
+      pubkey TEXT NOT NULL,
+      nonce TEXT NOT NULL,
+      seen_at TEXT NOT NULL,
+      PRIMARY KEY(session_id, pubkey, nonce)
+    );
+
+    CREATE TABLE IF NOT EXISTS access_events (
+      id TEXT PRIMARY KEY,
+      session_id TEXT DEFAULT '',
+      pubkey TEXT NOT NULL,
+      event_type TEXT NOT NULL,
+      detail TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL
+    );
   `);
+
+  ensureColumns('project_state', [
+    { name: 'openclaw_session_id', sql: 'openclaw_session_id TEXT DEFAULT \'\' ' },
+    { name: 'openclaw_memory_json', sql: 'openclaw_memory_json TEXT NOT NULL DEFAULT \'{}\'' },
+    { name: 'openclaw_bootstrapped_at', sql: 'openclaw_bootstrapped_at TEXT DEFAULT \'\' ' },
+    { name: 'openclaw_last_seen_at', sql: 'openclaw_last_seen_at TEXT DEFAULT \'\' ' },
+  ]);
 }
 
 module.exports = { db, initDb, DATA_DIR };

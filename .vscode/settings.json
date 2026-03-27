@@ -1,0 +1,14 @@
+{
+  "files.exclude": {
+    "**/storage": true,
+    "**/storage/**": true,
+    "**/data": true,
+    "**/data/**": true
+  },
+  "search.exclude": {
+    "**/storage": true,
+    "**/storage/**": true,
+    "**/data": true,
+    "**/data/**": true
+  }
+}

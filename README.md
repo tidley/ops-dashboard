@@ -15,12 +15,22 @@ Self-hosted multi-agent, multi-project, multi-workflow operator dashboard.
   - dedicated workspace root: `storage/projects/<project_id>/`
   - memory namespace per project
   - project-scoped sessions/messages/workflows/logs
-- Structured project conversation form with routing metadata fields
+- Threaded project conversation view with local OpenClaw routing
 - Agent registry + routing adapters:
   - `echo` adapter (built-in)
   - `http` adapter (for external/local agent bridges)
+  - `openclaw` local CLI adapter for the conversation tab
+  - `codex` routing endpoint, backed by the OpenAI Responses API
 - Workflow state controls: create/run/pause/continue(done via state set)
 - Persistent storage across restarts
+- Public access flow with NIP-17 bootstrap, allowlisted pubkeys, and session cookies
+- Browser sign-in options:
+  - NIP-07 signer
+  - Amber / Nostr Connect (`NIP-46`)
+  - pasted `nsec` for local signing
+- WebRTC data-channel gateway for browser access through a public VPS peer
+- Logout and access revocation for active sessions
+- Recent / favourites / archived project sidebar state persisted in SQLite
 
 ## Run
 ```bash
@@ -29,6 +39,42 @@ npm install
 npm start
 # open http://127.0.0.1:4080
 ```
+
+### Codex integration
+The project page includes a `Run with Codex` action on the Conversations tab.
+Set these environment variables before starting the app:
+
+- `OPENAI_API_KEY` for the Codex route
+- `CODEX_MODEL` to override the default model (`gpt-5.3-codex`)
+- `CODEX_REASONING_EFFORT` to override the default effort (`medium`)
+- `CODEX_MAX_OUTPUT_TOKENS` to adjust response length
+
+### OpenClaw integration
+The project conversation tab routes to the local OpenClaw CLI by default.
+If the binary is not on `PATH`, set:
+
+- `OPENCLAW_BIN` to the executable path or name
+
+The dashboard also passes project, session, workflow, and planning context into the OpenClaw prompt so replies stay grounded in the current workspace.
+
+### Remote access
+The current remote access model is:
+
+- `NIP-17` DMs for bootstrap/authentication and session signalling
+- `WebRTC` data channel for the browser session transport
+- `STUN` for candidate discovery
+- `no TURN`
+- direct browser-to-backend peer handoff when ICE succeeds
+- optional HTTPS front door for the access page; it is not the data path
+
+The access page supports:
+
+- NIP-07 sign-in
+- Amber / Nostr Connect on browsers such as Firefox for Android
+- optional pasted `nsec`
+
+The dashboard itself is protected by access-session middleware; unauthenticated requests are redirected to `/access` or returned `401` for API routes.
+The old HTTP bootstrap and signalling routes remain available for compatibility/debugging, but the default browser flow now uses NIP-17 relay signalling and direct WebRTC peer setup.
 
 ## Dev
 ```bash
@@ -52,7 +98,8 @@ npm run backfill
 
 Behavior:
 - Imports immediate directories under `/home/tom/code`
-- Skips hidden dirs and `ops-dashboard`
+- Skips hidden dirs
+- Includes `ops-dashboard` so the dashboard project itself appears in the project list
 - Uses upsert-by-name (safe to run repeatedly)
 - Auto-tags `pave` repos into a dedicated **Pave** section on homepage
 
@@ -90,11 +137,15 @@ Response expected:
 - Restrict firewall to WG subnet
 
 ### HTTPS public exposure (after auth is added)
-- Put Caddy/Nginx in front
-- Keep app loopback-only
-- Enable TLS termination in proxy
-- Add authentication middleware before public exposure (basic auth/OIDC)
+- Put a public HTTPS front door in front of the access page
+- Keep the dashboard backend private unless you intentionally expose a peer endpoint
+- Use NIP-17 relay signalling and STUN to set up the WebRTC session
+- Let the browser and backend talk directly over WebRTC when ICE succeeds
+- Keep access locked to bootstrap/session routes plus the authenticated dashboard
 - Set strict headers (HSTS, X-Frame-Options, CSP, etc.)
+
+For the direct relay/WebRTC version of the access flow, see:
+- [`docs/deployment-vps-wireguard.md`](docs/deployment-vps-wireguard.md)
 
 #### Caddy example
 ```caddy

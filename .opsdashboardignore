@@ -1,0 +1,8 @@
+# Hidden generated projects created by automated tests
+wf-state-test-*
+prune-test-*
+session-test-*
+existing-session-test-*
+test-project-*
+default-agents-project-*
+test-wf-*
