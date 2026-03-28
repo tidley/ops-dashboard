@@ -2,9 +2,13 @@
 
 Vibez is a vibe coded app for your vibe coded apps.
 
-Vibez is a vibe coded app for your vibe coded apps.
+It's a self-hosted multi-agent, multi-project, multi-workflow operator dashboard.
 
-Self-hosted multi-agent, multi-project, multi-workflow operator dashboard.
+- Sub-agent auto-spawned per project with specific context.
+- Local database for extensive history per project.
+- Separation of project information unless instructed otherwise.
+- Access to underlying OpenClaw via chat and configuration panel.
+
 <img width="580" height="741" alt="image" src="https://github.com/user-attachments/assets/3f068d95-bd95-4c10-b789-81cf75ca713b" />
 
 <img width="1413" height="834" alt="image" src="https://github.com/user-attachments/assets/f5e136be-ebad-4497-b59e-9f8e35c51a94" />
