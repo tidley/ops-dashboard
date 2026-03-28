@@ -1,13 +1,14 @@
-# Agentic Operations Dashboard (MVP)
+# Vibez (MVP)
 
-Vibez is a vibe coded app for your vibe coded apps.
+A vibe coded app for your vibe coded apps.
 
-It's a self-hosted multi-agent, multi-project, multi-workflow operator dashboard.
+Vibes is a self-hosted multi-agent, multi-project, multi-workflow operator dashboard.
 
 - Sub-agent auto-spawned per project with specific context.
 - Local database for extensive history per project.
 - Separation of project information unless instructed otherwise.
 - Access to underlying OpenClaw via chat and configuration panel.
+- Nostr access control
 
 <img width="580" height="741" alt="image" src="https://github.com/user-attachments/assets/3f068d95-bd95-4c10-b789-81cf75ca713b" />
 
