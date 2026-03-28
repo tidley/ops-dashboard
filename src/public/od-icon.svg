@@ -1,7 +1,43 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="110" fill="#13161d"/>
-  <rect x="56" y="56" width="400" height="400" rx="88" fill="#171b22" stroke="#2a303a" stroke-width="12"/>
-  <text x="50%" y="54%" text-anchor="middle" dominant-baseline="middle"
-        font-family="system-ui, -apple-system, Segoe UI, Arial, sans-serif"
-        font-size="182" font-weight="700" fill="#e8ebf0" letter-spacing="6">OD</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="Operations logo">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0a0d19"/>
+      <stop offset="100%" stop-color="#12162a"/>
+    </linearGradient>
+    <linearGradient id="cyanBlue" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6df3ff"/>
+      <stop offset="100%" stop-color="#4ea3ff"/>
+    </linearGradient>
+    <linearGradient id="bluePurple" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#8ca6ff"/>
+      <stop offset="100%" stop-color="#b864ff"/>
+    </linearGradient>
+    <linearGradient id="softWhite" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f5f8ff"/>
+      <stop offset="100%" stop-color="#c4cafb"/>
+    </linearGradient>
+    <radialGradient id="center" cx="38%" cy="35%" r="72%">
+      <stop offset="0%" stop-color="#7ff2f0"/>
+      <stop offset="55%" stop-color="#59c6ff"/>
+      <stop offset="100%" stop-color="#2c74ff"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1024" height="1024" rx="180" fill="url(#bg)"/>
+
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="42">
+    <path d="M280 360 L492 232 Q512 220 532 232 L744 360" stroke="url(#cyanBlue)"/>
+    <path d="M280 384 L280 618 Q280 650 306 666 L486 774" stroke="url(#cyanBlue)"/>
+    <path d="M744 384 L744 618 Q744 650 718 666 L538 774" stroke="url(#bluePurple)"/>
+    <path d="M300 420 L420 492" stroke="url(#cyanBlue)"/>
+    <path d="M724 420 L604 492" stroke="url(#bluePurple)"/>
+    <path d="M512 744 L512 604" stroke="url(#bluePurple)"/>
+  </g>
+
+  <g>
+    <circle cx="280" cy="360" r="54" fill="url(#cyanBlue)"/>
+    <circle cx="744" cy="360" r="54" fill="url(#softWhite)"/>
+    <circle cx="512" cy="512" r="84" fill="url(#center)"/>
+    <circle cx="512" cy="744" r="54" fill="url(#softWhite)"/>
+  </g>
 </svg>

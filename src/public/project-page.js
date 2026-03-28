@@ -5,17 +5,40 @@
   var pageInitialized = false;
   var outboundQueue = [];
   var activeRequest = null;
+  var PAGE_CACHE_TTL_MS = 5 * 60 * 1000;
+  var MESSAGE_CACHE_TTL_MS = 8000;
+  var TAB_PREFETCH_DELAY_MS = 400;
+  var pageHtmlCache = new Map();
+  var pageHtmlRequests = new Map();
+  var messagesCache = new Map();
+  var projectTabPrefetchTimer = null;
 
   function getBody() {
     return document.body;
   }
 
+  function getProjectContext() {
+    return window.PROJECT_CONTEXT || {};
+  }
+
   function getProjectId() {
-    return getBody().getAttribute('data-project-id') || '';
+    return getProjectContext().projectId || getBody().getAttribute('data-project-id') || '';
+  }
+
+  function cacheKeyForUrl(url) {
+    try {
+      return new URL(url, window.location.origin).toString();
+    } catch {
+      return String(url || '');
+    }
+  }
+
+  function hasProjectId() {
+    return Boolean(getProjectId());
   }
 
   function getActiveTab() {
-    return getBody().getAttribute('data-active-tab') || 'overview';
+    return getProjectContext().activeTab || getBody().getAttribute('data-active-tab') || 'overview';
   }
 
   function isConversationTab() {
@@ -27,6 +50,130 @@
     return document.querySelector('.chat-thread');
   }
 
+  function getRecentFilesRoot() {
+    return document.querySelector('[data-recent-files-root]');
+  }
+
+  function getCurrentSessionId() {
+    var context = getProjectContext();
+    if (context && context.sessionId) return String(context.sessionId).trim();
+
+    var composer = getComposer();
+    var sessionInput = getSessionInput(composer);
+    if (sessionInput && sessionInput.value) return String(sessionInput.value).trim();
+
+    var bodySessionId = getBody().getAttribute('data-session-id');
+    if (bodySessionId) return String(bodySessionId).trim();
+
+    return '';
+  }
+
+  function getMessagesCacheKey(projectId, sessionId, agentId) {
+    return [projectId || '', sessionId || '', agentId || ''].join('|');
+  }
+
+  function getCachedPageHtml(url) {
+    var key = cacheKeyForUrl(url);
+    var entry = key ? pageHtmlCache.get(key) : null;
+    if (!entry) return '';
+    if (Date.now() - entry.fetchedAt > PAGE_CACHE_TTL_MS) {
+      pageHtmlCache.delete(key);
+      return '';
+    }
+    return entry.html || '';
+  }
+
+  function setCachedPageHtml(url, html) {
+    var key = cacheKeyForUrl(url);
+    if (!key || typeof html !== 'string') return;
+    pageHtmlCache.set(key, {
+      html: html,
+      fetchedAt: Date.now(),
+    });
+  }
+
+  function getCachedMessages(projectId, sessionId, agentId) {
+    var key = getMessagesCacheKey(projectId, sessionId, agentId);
+    var entry = key ? messagesCache.get(key) : null;
+    if (!entry) return null;
+    if (Date.now() - entry.fetchedAt > MESSAGE_CACHE_TTL_MS) {
+      messagesCache.delete(key);
+      return null;
+    }
+    return entry.messages || null;
+  }
+
+  function setCachedMessages(projectId, sessionId, agentId, messages) {
+    var key = getMessagesCacheKey(projectId, sessionId, agentId);
+    if (!key || !Array.isArray(messages)) return;
+    messagesCache.set(key, {
+      messages: messages,
+      fetchedAt: Date.now(),
+    });
+  }
+
+  function getRecentFileItems() {
+    return Array.prototype.slice.call(document.querySelectorAll('[data-recent-file-item]'));
+  }
+
+  function clearRecentFileSelection() {
+    getRecentFileItems().forEach(function(button) {
+      button.classList.remove('is-selected');
+      button.setAttribute('aria-expanded', 'false');
+      var trigger = button.querySelector('[data-recent-file-trigger]');
+      if (trigger) trigger.setAttribute('aria-expanded', 'false');
+      var detail = button.querySelector('[data-recent-file-detail]');
+      if (detail) {
+        detail.classList.remove('is-open');
+        detail.style.maxHeight = '0px';
+        detail.setAttribute('aria-hidden', 'true');
+      }
+    });
+  }
+
+  function getRecentFileItemDetail(item) {
+    if (!item) return null;
+    return item.querySelector('[data-recent-file-detail]');
+  }
+
+  function setRecentFileDetailOpen(item, open) {
+    var detail = getRecentFileItemDetail(item);
+    if (!detail) return;
+    var trigger = item.querySelector('[data-recent-file-trigger]');
+    item.classList.toggle('is-selected', Boolean(open));
+    item.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (trigger) trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
+    detail.classList.toggle('is-open', Boolean(open));
+    detail.setAttribute('aria-hidden', open ? 'false' : 'true');
+    if (open) {
+      detail.style.maxHeight = detail.scrollHeight + 'px';
+    } else {
+      detail.style.maxHeight = '0px';
+    }
+  }
+
+  function closeRecentFileDetail() {
+    clearRecentFileSelection();
+  }
+
+  function openRecentFileDetail(button) {
+    if (!button) return;
+
+    var item = typeof button.closest === 'function'
+      ? button.closest('[data-recent-file-item]')
+      : button;
+    if (!item) return;
+
+    var selected = item.classList.contains('is-selected') && getRecentFileItemDetail(item) && getRecentFileItemDetail(item).classList.contains('is-open');
+    if (selected) {
+      closeRecentFileDetail();
+      return;
+    }
+
+    clearRecentFileSelection();
+    setRecentFileDetailOpen(item, true);
+  }
+
   function scrollThreadToBottom() {
     var thread = getThread();
     if (!thread) return;
@@ -35,6 +182,117 @@
       thread.scrollTo({ top: target, behavior: 'auto' });
     }
     thread.scrollTop = target;
+  }
+
+  function stopPolling() {
+    if (!pollTimer) return;
+    window.clearTimeout(pollTimer);
+    pollTimer = null;
+  }
+
+  function fetchAndCachePageHtml(url) {
+    var key = cacheKeyForUrl(url);
+    if (!key) {
+      return Promise.reject(new Error('invalid_url'));
+    }
+
+    var inflight = pageHtmlRequests.get(key);
+    if (inflight) return inflight;
+
+    var request = fetch(url, {
+      headers: { Accept: 'text/html' }
+    })
+      .then(function(res) {
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.text();
+      })
+      .then(function(html) {
+        setCachedPageHtml(url, html);
+        return html;
+      })
+      .finally(function() {
+        pageHtmlRequests.delete(key);
+      });
+
+    pageHtmlRequests.set(key, request);
+    return request;
+  }
+
+  function buildProjectTabUrl(tab, sessionId) {
+    var projectId = getProjectId();
+    if (!projectId || !tab) return '';
+
+    var url = new URL('/project/' + encodeURIComponent(projectId), window.location.origin);
+    url.searchParams.set('tab', tab);
+    if (sessionId) {
+      url.searchParams.set('session', sessionId);
+    }
+    return url.toString();
+  }
+
+  function getProjectTabPrefetchUrls() {
+    var activeTab = getActiveTab();
+    var sessionId = getCurrentSessionId();
+    return ['overview', 'conversations', 'main-agent', 'workflows', 'memory', 'files', 'logs', 'settings']
+      .filter(function(tab) { return tab !== activeTab; })
+      .map(function(tab) { return buildProjectTabUrl(tab, sessionId); })
+      .filter(Boolean);
+  }
+
+  function prefetchProjectTabUrl(url) {
+    if (!url || getCachedPageHtml(url)) return Promise.resolve(false);
+    return fetchAndCachePageHtml(url)
+      .then(function() {
+        return true;
+      })
+      .catch(function() {
+        return false;
+      });
+  }
+
+  function prefetchProjectTabs() {
+    if (!hasProjectId()) return;
+    if (projectTabPrefetchTimer) return;
+
+    var run = function() {
+      projectTabPrefetchTimer = null;
+      var urls = getProjectTabPrefetchUrls();
+      if (!urls.length) return;
+
+      var chain = Promise.resolve();
+      urls.forEach(function(url) {
+        chain = chain.then(function() {
+          return prefetchProjectTabUrl(url);
+        });
+      });
+    };
+
+    if (window.requestIdleCallback) {
+      projectTabPrefetchTimer = window.requestIdleCallback(run, { timeout: TAB_PREFETCH_DELAY_MS });
+      return;
+    }
+
+    projectTabPrefetchTimer = window.setTimeout(run, TAB_PREFETCH_DELAY_MS);
+  }
+
+  function prefetchProjectTabOnIntent(url) {
+    if (!url || !hasProjectId()) return;
+    if (getCachedPageHtml(url)) return;
+    prefetchProjectTabUrl(url);
+  }
+
+  function rehydratePageModules() {
+    if (window.OpsDashboardSidebarSections && typeof window.OpsDashboardSidebarSections.init === 'function') {
+      window.OpsDashboardSidebarSections.init();
+    }
+
+    if (window.OpsDashboardHomeUsage && typeof window.OpsDashboardHomeUsage.initUsageCharts === 'function') {
+      window.OpsDashboardHomeUsage.initUsageCharts();
+    }
+
+    if (window.OpsDashboardOpenClawControl && typeof window.OpsDashboardOpenClawControl.refresh === 'function') {
+      window.OpsDashboardOpenClawControl.refresh();
+    }
   }
 
   function getComposer() {
@@ -64,6 +322,44 @@
 
   function getSearchRoot(input) {
     return input.closest('[data-project-filter-root]');
+  }
+
+  function getSettingsWizard() {
+    return window.PROJECT_SETTINGS_WIZARD || {};
+  }
+
+  function getSettingsField(id) {
+    return document.getElementById(id);
+  }
+
+  function setSettingsFieldValue(id, value) {
+    var field = getSettingsField(id);
+    if (!field) return;
+    field.value = String(value || '');
+    if (typeof field.focus === 'function') {
+      field.focus({ preventScroll: true });
+    }
+    if (typeof field.scrollIntoView === 'function') {
+      field.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }
+
+  function wireProjectSettingsWizard() {
+    var wizard = getSettingsWizard();
+    var codeFolderBtn = document.getElementById('wizard_use_code_folder_btn');
+    var instructionsBtn = document.getElementById('wizard_fill_instructions_btn');
+
+    if (codeFolderBtn) {
+      codeFolderBtn.addEventListener('click', function() {
+        setSettingsFieldValue('code_folder', wizard.codeFolder || '');
+      });
+    }
+
+    if (instructionsBtn) {
+      instructionsBtn.addEventListener('click', function() {
+        setSettingsFieldValue('getting_started', wizard.starterInstructions || '');
+      });
+    }
   }
 
   function formatDateTime(iso) {
@@ -113,19 +409,25 @@
   function appendDetailsSection(parent, className, summaryText, childBuilder) {
     var details = document.createElement('details');
     details.className = className;
+    var isMessageDetails = className.indexOf('chat-bubble__details--message') !== -1;
 
     var summary = document.createElement('summary');
     summary.className = 'chat-bubble__summary';
     summary.textContent = summaryText;
-    details.appendChild(summary);
 
     if (typeof childBuilder === 'function') {
       childBuilder(details);
     }
 
+    details.appendChild(summary);
+
     parent.appendChild(details);
-    if (className.indexOf('chat-bubble__details--error') !== -1) {
+    if (isMessageDetails || className.indexOf('chat-bubble__details--error') !== -1) {
       var syncSummary = function() {
+        if (isMessageDetails) {
+          summary.textContent = details.open ? 'show less' : 'show more';
+          return;
+        }
         summary.textContent = details.open ? 'hide error' : 'show error';
       };
       syncSummary();
@@ -353,6 +655,9 @@
           try {
             var composer = getComposer();
             var sessionInput = getSessionInput(composer);
+            var bodyParams = new URLSearchParams(item.body || '');
+            var agentId = bodyParams.get('agent_id') || '';
+            var resolvedSessionId = data.session_id || (sessionInput && sessionInput.value) || '';
             if (sessionInput && data.session_id) {
               sessionInput.value = data.session_id;
             }
@@ -366,6 +671,7 @@
           }
 
           try {
+            setCachedMessages(projectId, resolvedSessionId, agentId, data.messages);
             renderThread(data.messages);
           } catch (renderErr) {
             console.error('thread render error', renderErr);
@@ -415,6 +721,10 @@
   }
 
   function bindPolling() {
+    if (!hasProjectId()) {
+      stopPolling();
+      return;
+    }
     if (pollTimer) return;
 
     var poll = function() {
@@ -441,6 +751,13 @@
         return;
       }
 
+      var cachedMessages = getCachedMessages(getProjectId(), sessionId, agentId);
+      if (cachedMessages) {
+        appendMessages(cachedMessages);
+        pollTimer = window.setTimeout(poll, POLL_INTERVAL_MS);
+        return;
+      }
+
       var messagesUrl = '/api/project/' + getProjectId() + '/messages?session_id=' + encodeURIComponent(sessionId);
       if (agentId) {
         messagesUrl += '&agent_id=' + encodeURIComponent(agentId);
@@ -450,6 +767,7 @@
         .then(function(res) { return res.json(); })
         .then(function(data) {
           if (data.session_id && Array.isArray(data.messages)) {
+            setCachedMessages(getProjectId(), data.session_id, agentId, data.messages);
             appendMessages(data.messages);
           }
           pollTimer = window.setTimeout(poll, POLL_INTERVAL_MS);
@@ -501,6 +819,35 @@
     if (button) button.setAttribute('aria-expanded', open ? 'true' : 'false');
   }
 
+  function getDesktopSidebarCollapsedKey() {
+    return 'ops-dashboard.project-sidebar-collapsed:' + getProjectId();
+  }
+
+  function readDesktopSidebarCollapsed() {
+    try {
+      return window.localStorage.getItem(getDesktopSidebarCollapsedKey()) === '1';
+    } catch {
+      return false;
+    }
+  }
+
+  function writeDesktopSidebarCollapsed(collapsed) {
+    try {
+      window.localStorage.setItem(getDesktopSidebarCollapsedKey(), collapsed ? '1' : '0');
+    } catch {}
+  }
+
+  function setDesktopSidebarCollapsed(collapsed) {
+    document.body.classList.toggle('sidebar-collapsed', Boolean(collapsed));
+    var button = document.querySelector('[data-sidebar-desktop-toggle]');
+    if (button) {
+      button.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+      button.setAttribute('aria-label', collapsed ? 'Expand projects sidebar' : 'Collapse projects sidebar');
+      button.setAttribute('title', collapsed ? 'Expand projects sidebar' : 'Collapse projects sidebar');
+    }
+    writeDesktopSidebarCollapsed(collapsed);
+  }
+
   function closeSidebar() {
     setSidebarOpen(false);
   }
@@ -528,11 +875,15 @@
       getBody().setAttribute('data-active-tab', nextBody.getAttribute('data-active-tab') || '');
     }
 
+    stopPolling();
     currentShell.replaceWith(nextShell.cloneNode(true));
     closeSidebar();
     syncFilterState();
+    rehydratePageModules();
     bindMessageComposer();
-    bindPolling();
+    if (hasProjectId()) {
+      bindPolling();
+    }
     if (isConversationTab()) {
       scrollThreadToBottom();
     }
@@ -540,16 +891,21 @@
   }
 
   function navigate(url, pushHistory) {
-    return fetch(url, {
-      headers: { Accept: 'text/html' }
-    })
-      .then(function(res) {
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        return res.text();
-      })
+    var cachedHtml = getCachedPageHtml(url);
+    if (cachedHtml) {
+      try {
+        var cachedDoc = new DOMParser().parseFromString(cachedHtml, 'text/html');
+        if (swapPage(cachedDoc, url, pushHistory)) {
+          return Promise.resolve(true);
+        }
+      } catch (err) {
+        console.error('cached navigation error', err);
+      }
+    }
+
+    return fetchAndCachePageHtml(url)
       .then(function(html) {
-        var parser = new DOMParser();
-        var nextDoc = parser.parseFromString(html, 'text/html');
+        var nextDoc = new DOMParser().parseFromString(html, 'text/html');
         if (!swapPage(nextDoc, url, pushHistory)) {
           window.location.href = url;
         }
@@ -579,6 +935,23 @@
   }
 
   function handleDocumentClick(e) {
+    var tabLink = e.target.closest('.tabs a');
+    if (tabLink) {
+      prefetchProjectTabOnIntent(tabLink.href || tabLink.getAttribute('href') || '');
+    }
+
+    var recentFileTrigger = e.target.closest('[data-recent-file-trigger]');
+    if (recentFileTrigger) {
+      e.preventDefault();
+      openRecentFileDetail(recentFileTrigger);
+      return;
+    }
+
+    var recentFilesRoot = getRecentFilesRoot();
+    if (recentFilesRoot && !e.target.closest('[data-recent-files-root]')) {
+      closeRecentFileDetail();
+    }
+
     var sidebarToggle = e.target.closest('[data-sidebar-toggle]');
     if (sidebarToggle) {
       e.preventDefault();
@@ -596,7 +969,15 @@
       return;
     }
 
-    var navLink = e.target.closest('.tabs a, .project-item__link');
+    var desktopSidebarToggle = e.target.closest('[data-sidebar-desktop-toggle]');
+    if (desktopSidebarToggle) {
+      e.preventDefault();
+      var nextCollapsed = !document.body.classList.contains('sidebar-collapsed');
+      setDesktopSidebarCollapsed(nextCollapsed);
+      return;
+    }
+
+    var navLink = e.target.closest('.tabs a, .project-item__link, .brand a, .topbar__meta a[href="/settings"], .topbar__meta a[href="/"]');
     if (!navLink) return;
 
     var href = navLink.getAttribute('href') || '';
@@ -605,7 +986,7 @@
     var nextUrl = new URL(href, window.location.origin);
     if (nextUrl.origin !== window.location.origin) return;
 
-    if (!nextUrl.pathname.startsWith('/project/')) return;
+    if (nextUrl.pathname !== '/' && nextUrl.pathname !== '/settings' && !nextUrl.pathname.startsWith('/project/')) return;
 
     e.preventDefault();
     navigate(nextUrl.toString(), true);
@@ -626,6 +1007,12 @@
     updateProjectFilter(input);
   }
 
+  function handleDocumentIntent(e) {
+    var tabLink = e.target.closest('.tabs a');
+    if (!tabLink) return;
+    prefetchProjectTabOnIntent(tabLink.href || tabLink.getAttribute('href') || '');
+  }
+
   function handlePopState() {
     navigate(window.location.href, false);
   }
@@ -635,13 +1022,25 @@
     pageInitialized = true;
 
     document.addEventListener('click', handleDocumentClick);
+    document.addEventListener('mouseover', handleDocumentIntent);
+    document.addEventListener('focusin', handleDocumentIntent);
     document.addEventListener('submit', handleDocumentSubmit);
     document.addEventListener('input', handleDocumentInput);
     window.addEventListener('popstate', handlePopState);
 
+    if (window.matchMedia && window.matchMedia('(min-width: 861px)').matches) {
+      setDesktopSidebarCollapsed(readDesktopSidebarCollapsed());
+    }
+
     bindMessageComposer();
+    wireProjectSettingsWizard();
     syncFilterState();
-    bindPolling();
+    prefetchProjectTabs();
+    if (hasProjectId()) {
+      bindPolling();
+    } else {
+      stopPolling();
+    }
     if (isConversationTab()) {
       scrollThreadToBottom();
     }
@@ -656,5 +1055,8 @@
     submitMessage: submitMessage,
     flushOutboundQueue: flushOutboundQueue,
     renderQueuedMessages: renderQueuedMessages,
+    openRecentFileDetail: openRecentFileDetail,
+    closeRecentFileDetail: closeRecentFileDetail,
+    setDesktopSidebarCollapsed: setDesktopSidebarCollapsed,
   };
 })();

@@ -1,6 +1,6 @@
 {
-  "name": "Ops Dashboard",
-  "short_name": "OpsDash",
+  "name": "vibez",
+  "short_name": "vibez",
   "description": "Self-hosted multi-agent operator dashboard",
   "start_url": "/",
   "scope": "/",

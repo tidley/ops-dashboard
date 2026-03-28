@@ -166,7 +166,7 @@ describe('nsec connection e2e', function() {
 
     const response = await proxy.proxyFetch('/', { method: 'GET' });
     assert.equal(response.status, 200);
-    assert.match(response.body, /Ops Dashboard|Project Detail|Projects/);
+    assert.match(response.body, /vibez|Ops Dashboard|Operations Dashboard|Project Detail|Projects/);
 
     proxy.close();
     webRtcGateway.closeSession(bootstrap.session.id, 'test_complete');

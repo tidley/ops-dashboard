@@ -19,3 +19,7 @@
 - 2026-03-27 UTC: Kept legacy HTTP bootstrap/signal routes for compatibility and debugging.
 - 2026-03-27 UTC: Reworked the dashboard theme to a minimal flat dark style with tighter spacing and simple borders.
 - 2026-03-27 UTC: Added mobile project/sidebar drawers for the home and project pages.
+- 2026-03-27 UTC: Split workspace settings into Global Settings and simplified Project Settings.
+- 2026-03-27 UTC: Added a dedicated global workspace settings page and wizard backed by `app_settings`.
+- 2026-03-27 UTC: Added a home-page OpenClaw control island with live stats and model/gateway controls.
+- 2026-03-27 UTC: Kept OpenClaw Main as a separate hidden namespace from project conversations.

@@ -255,5 +255,6 @@ describe('relay access e2e', function() {
     assert.ok(urls.includes('wss://relay.nostr.band'));
     assert.ok(urls.includes('wss://relay.snort.social'));
     assert.ok(urls.includes('wss://nos.lol'));
+    assert.ok(urls.includes('wss://nostr.mom'));
   });
 });

@@ -369,12 +369,14 @@ function seedDefaults() {
   const openclawAgent = db.prepare('SELECT id FROM agents WHERE id=?').get('agent-openclaw-main');
   if (!openclawAgent) {
     db.prepare('INSERT INTO agents (id,name,role,kind,config_json,enabled,created_at) VALUES (?,?,?,?,?,?,?)')
-      .run('agent-openclaw-main', 'OpenClaw Main', 'coordinator', 'openclaw', JSON.stringify({
+      .run('agent-openclaw-main', 'OpenClaw Main', 'software engineer', 'openclaw', JSON.stringify({
         agent_id: 'main',
         local: true,
         timeout_sec: 90,
         thinking: 'low'
       }), 1, t);
+  } else {
+    db.prepare('UPDATE agents SET role=? WHERE id=?').run('software engineer', 'agent-openclaw-main');
   }
 
   if (process.env.OPENAI_API_KEY) {
@@ -477,6 +479,25 @@ function updateProjectSettings(projectId, patch = {}) {
   db.prepare('UPDATE projects SET settings_json=? WHERE id=?')
     .run(JSON.stringify(settings), projectId);
   return getProject(projectId);
+}
+
+function getAppSetting(key, fallback = null) {
+  const row = db.prepare('SELECT value_json FROM app_settings WHERE key=?').get(key);
+  if (!row) return fallback;
+  return parseJson(row.value_json, fallback);
+}
+
+function setAppSetting(key, value) {
+  const t = now();
+  const valueJson = JSON.stringify(value ?? null);
+  db.prepare(`
+    INSERT INTO app_settings (key, value_json, updated_at)
+    VALUES (?,?,?)
+    ON CONFLICT(key) DO UPDATE SET
+      value_json=excluded.value_json,
+      updated_at=excluded.updated_at
+  `).run(key, valueJson, t);
+  return getAppSetting(key, null);
 }
 
 function listProjects() {
@@ -900,8 +921,10 @@ module.exports = {
   getProjectState,
   touchProjectState,
   updateProjectSettings,
+  getAppSetting,
   setProjectFavorite,
   setProjectArchived,
+  setAppSetting,
   importProjectsFromDirectory,
   ensureProjectState,
   listProjectMessages,

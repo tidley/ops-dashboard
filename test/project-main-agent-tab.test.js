@@ -9,7 +9,7 @@ function renderProjectTemplate(locals) {
 }
 
 describe('project main agent tab', function() {
-  it('renders a direct OpenClaw main tab with the main agent selected', function() {
+  it('renders a direct OpenClaw main tab with the main agent selected', function () {
     const html = renderProjectTemplate({
       project: {
         id: 'proj-main-agent',
@@ -22,7 +22,14 @@ describe('project main agent tab', function() {
         workspace_dir: '/tmp/proj-main-agent',
         sessions: [{ id: 'ses-1' }],
         workflows: [],
-        agents: [{ id: 'agent-openclaw-main', name: 'OpenClaw Main', kind: 'openclaw', role: 'coordinator' }],
+        agents: [
+          {
+            id: 'agent-openclaw-main',
+            name: 'OpenClaw Main',
+            kind: 'openclaw',
+            role: 'software engineer',
+          },
+        ],
       },
       activeTab: 'main-agent',
       activeSession: 'ses-1',
@@ -30,10 +37,25 @@ describe('project main agent tab', function() {
       messages: [],
       logs: [],
       artifacts: [],
-      agents: [{ id: 'agent-openclaw-main', name: 'OpenClaw Main', kind: 'openclaw', role: 'coordinator' }],
+      agents: [
+        {
+          id: 'agent-openclaw-main',
+          name: 'OpenClaw Main',
+          kind: 'openclaw',
+          role: 'software engineer',
+        },
+      ],
       planning: { currentState: [], now: [], health: [] },
       sidebarProjects: [],
-      projectGroups: { recent: [], favourites: [], favorites: [], general: [], pave: [], sec06: [], archived: [] },
+      projectGroups: {
+        recent: [],
+        favourites: [],
+        favorites: [],
+        general: [],
+        pave: [],
+        sec06: [],
+        archived: [],
+      },
       stats: {
         sessionCount: 1,
         workflowCount: 0,
@@ -51,24 +73,197 @@ describe('project main agent tab', function() {
         workflowStates: {},
         importedFrom: '',
       },
-      conversationAgent: { id: 'agent-openclaw-main', name: 'OpenClaw Main', kind: 'openclaw', role: 'coordinator' },
+      conversationAgent: {
+        id: 'agent-openclaw-main',
+        name: 'OpenClaw Main',
+        kind: 'openclaw',
+        role: 'software engineer',
+      },
       codexModel: 'gpt-5.3-codex',
       codexConfigured: false,
-      projectTabs: ['overview', 'conversations', 'main-agent', 'workflows', 'memory', 'files', 'logs', 'settings'],
+      projectTabs: [
+        'overview',
+        'conversations',
+        'main-agent',
+        'workflows',
+        'memory',
+        'files',
+        'logs',
+        'settings',
+      ],
       workflowIdFromQuery: '',
       formatRelativeTime: (value) => value,
       formatDateTime: (value) => value,
       projectMemory: {
         recentArtifacts: [],
       },
+      mainAgent: {
+        id: 'agent-openclaw-main',
+        name: 'OpenClaw Main',
+        kind: 'openclaw',
+        role: 'software engineer',
+      },
+      mainProject: {
+        id: 'proj-openclaw-main',
+        workspace_dir: '/home/tom/code/ops-dashboard',
+        memory_namespace: 'memory.proj-openclaw-main',
+      },
+      mainState: {
+        openclaw_session_id: 'ses-main',
+        openclaw_bootstrapped_at: '2026-03-27T17:00:00.000Z',
+        openclaw_last_seen_at: '2026-03-27T17:01:00.000Z',
+      },
+      mainStats: {
+        sessionCount: 4,
+        messageCount: 22,
+        artifactCount: 6,
+      },
+      recentFileChanges: [
+        {
+          status: 'M',
+          status_label: 'Modified',
+          file_path: 'src/app.js',
+          updated_at: '2026-03-27T17:02:00.000Z',
+          change_summary: '+12 -3',
+          change_detail: '## Working tree\n@@ -1,2 +1,2 @@\n-old\n+new',
+        },
+      ],
     });
 
     assert.match(html, /data-active-tab="main-agent"/);
     assert.match(html, /OpenClaw Main/);
+    assert.match(html, /data-openclaw-main-switch/);
     assert.match(html, /name="agent_id" value="agent-openclaw-main"/);
+    assert.match(
+      html,
+      /<a class="tab [^"]*tab--utility[^"]*" href="\/project\/proj-main-agent\?tab=settings(?:&amp;session=ses-1)?">Settings<\/a>/,
+    );
+    assert.match(html, /<a class="btn" href="\/settings">Settings<\/a>/);
+    assert.doesNotMatch(html, /Imported from/);
+    assert.match(html, /Agent details/);
+    assert.match(html, /Memory namespace/);
+    assert.match(html, /proj-main-agent/);
+    assert.match(html, /data-project-rail/);
+    assert.match(html, /data-sidebar-default-collapsed="true"/);
+    assert.doesNotMatch(html, /data-recent-files-root/);
+    assert.doesNotMatch(html, /Recent files/);
+    const openClawButtonIndex = html.indexOf('data-openclaw-main-switch');
+    const logoutButtonIndex = html.indexOf('Logout');
+    assert.ok(
+      openClawButtonIndex > -1 &&
+        logoutButtonIndex > -1 &&
+        openClawButtonIndex < logoutButtonIndex,
+    );
   });
 
-  it('renders a project usage chart on the overview tab', function() {
+  it('renders recent file diff details in the workspace changes rail', function () {
+    const html = renderProjectTemplate({
+      project: {
+        id: 'proj-diff-rail',
+        name: 'Diff Rail Project',
+        description: 'Regression test project',
+        status: 'active',
+        created_at: '2026-03-27T17:00:00.000Z',
+        last_activity: '2026-03-27T17:01:00.000Z',
+        memory_namespace: 'memory.proj-diff-rail',
+        workspace_dir: '/tmp/proj-diff-rail',
+        sessions: [{ id: 'ses-1' }],
+        workflows: [],
+        agents: [
+          {
+            id: 'agent-openclaw-main',
+            name: 'OpenClaw Main',
+            kind: 'openclaw',
+            role: 'software engineer',
+          },
+        ],
+      },
+      activeTab: 'conversations',
+      activeSession: 'ses-1',
+      currentSession: { id: 'ses-1', title: 'Session 1', state: 'active' },
+      messages: [],
+      logs: [],
+      artifacts: [],
+      agents: [
+        {
+          id: 'agent-openclaw-main',
+          name: 'OpenClaw Main',
+          kind: 'openclaw',
+          role: 'software engineer',
+        },
+      ],
+      planning: { currentState: [], now: [], health: [] },
+      sidebarProjects: [],
+      projectGroups: {
+        recent: [],
+        favourites: [],
+        favorites: [],
+        general: [],
+        pave: [],
+        sec06: [],
+        archived: [],
+      },
+      stats: {
+        sessionCount: 1,
+        workflowCount: 0,
+        agentCount: 1,
+        messageCount: 0,
+        logCount: 0,
+        artifactCount: 0,
+        activeSession: 'ses-1',
+        activeWorkflowCount: 0,
+        idleWorkflowCount: 0,
+        latestWorkflow: null,
+        latestSession: { id: 'ses-1' },
+        latestMessage: null,
+        latestLog: null,
+        workflowStates: {},
+        importedFrom: '',
+      },
+      conversationAgent: {
+        id: 'agent-openclaw-main',
+        name: 'OpenClaw Main',
+        kind: 'openclaw',
+        role: 'software engineer',
+      },
+      codexModel: 'gpt-5.3-codex',
+      codexConfigured: false,
+      projectTabs: [
+        'overview',
+        'conversations',
+        'main-agent',
+        'workflows',
+        'memory',
+        'files',
+        'logs',
+        'settings',
+      ],
+      workflowIdFromQuery: '',
+      formatRelativeTime: (value) => value,
+      formatDateTime: (value) => value,
+      projectMemory: {
+        recentArtifacts: [],
+      },
+      recentFileChanges: [
+        {
+          status: 'M',
+          status_label: 'Modified',
+          file_path: 'src/app.js',
+          updated_at: '2026-03-27T17:02:00.000Z',
+          change_summary: '+12 -3',
+          change_detail: '## Working tree\n@@ -1,2 +1,2 @@\n-old\n+new',
+        },
+      ],
+    });
+
+    assert.match(html, /Latest changes/);
+    assert.match(html, /data-recent-files-root/);
+    assert.match(html, /## Working tree/);
+    assert.match(html, /\+new/);
+    assert.match(html, /recent-file-item__detail-body--diff/);
+  });
+
+  it('renders a project usage chart on the overview tab', function () {
     const html = renderProjectTemplate({
       project: {
         id: 'proj-overview-usage',
@@ -81,7 +276,14 @@ describe('project main agent tab', function() {
         workspace_dir: '/tmp/proj-overview-usage',
         sessions: [{ id: 'ses-1' }],
         workflows: [],
-        agents: [{ id: 'agent-openclaw-main', name: 'OpenClaw Main', kind: 'openclaw', role: 'coordinator' }],
+        agents: [
+          {
+            id: 'agent-openclaw-main',
+            name: 'OpenClaw Main',
+            kind: 'openclaw',
+            role: 'software engineer',
+          },
+        ],
       },
       activeTab: 'overview',
       activeSession: 'ses-1',
@@ -89,10 +291,25 @@ describe('project main agent tab', function() {
       messages: [],
       logs: [],
       artifacts: [],
-      agents: [{ id: 'agent-openclaw-main', name: 'OpenClaw Main', kind: 'openclaw', role: 'coordinator' }],
+      agents: [
+        {
+          id: 'agent-openclaw-main',
+          name: 'OpenClaw Main',
+          kind: 'openclaw',
+          role: 'software engineer',
+        },
+      ],
       planning: { currentState: [], now: [], health: [] },
       sidebarProjects: [],
-      projectGroups: { recent: [], favourites: [], favorites: [], general: [], pave: [], sec06: [], archived: [] },
+      projectGroups: {
+        recent: [],
+        favourites: [],
+        favorites: [],
+        general: [],
+        pave: [],
+        sec06: [],
+        archived: [],
+      },
       stats: {
         sessionCount: 1,
         workflowCount: 0,
@@ -110,16 +327,57 @@ describe('project main agent tab', function() {
         workflowStates: {},
         importedFrom: '',
       },
-      conversationAgent: { id: 'agent-openclaw-main', name: 'OpenClaw Main', kind: 'openclaw', role: 'coordinator' },
+      conversationAgent: {
+        id: 'agent-openclaw-main',
+        name: 'OpenClaw Main',
+        kind: 'openclaw',
+        role: 'software engineer',
+      },
       codexModel: 'gpt-5.3-codex',
       codexConfigured: false,
-      projectTabs: ['overview', 'conversations', 'main-agent', 'workflows', 'memory', 'files', 'logs', 'settings'],
+      projectTabs: [
+        'overview',
+        'conversations',
+        'main-agent',
+        'workflows',
+        'memory',
+        'files',
+        'logs',
+        'settings',
+      ],
       workflowIdFromQuery: '',
       formatRelativeTime: (value) => value,
       formatDateTime: (value) => value,
       projectMemory: {
         recentArtifacts: [],
+        latestCommit: {
+          hash: 'abcdef1234567890abcdef1234567890abcdef12',
+          shortHash: 'abcdef1',
+          author: 'Ops Dashboard',
+          message: 'Update overview details',
+          date: '2026-03-27T17:03:00.000Z',
+          files: [
+            {
+              status: 'M',
+              status_label: 'Modified',
+              file_path: 'README.md',
+              updated_at: '2026-03-27T17:03:00.000Z',
+              change_summary: '+4 -2',
+              change_detail: '## Working tree\n@@ -1,2 +1,2 @@\n-old\n+new',
+            },
+          ],
+        },
       },
+      recentFileChanges: [
+        {
+          status: 'M',
+          status_label: 'Modified',
+          file_path: 'README.md',
+          updated_at: '2026-03-27T17:03:00.000Z',
+          change_summary: '+4 -2',
+          change_detail: '## Working tree\n@@ -1,2 +1,2 @@\n-old\n+new',
+        },
+      ],
       projectUsage: {
         todayTotal: 1200,
         weeklyTotal: 3400,
@@ -139,5 +397,130 @@ describe('project main agent tab', function() {
     assert.match(html, /data-usage-chart/);
     assert.match(html, /data-usage-series-24h/);
     assert.match(html, /home-usage\.js/);
+    assert.match(html, /Workspace details/);
+    assert.match(html, /Project folder/);
+    assert.match(html, /Last commit/);
+    assert.match(html, /Changed files/);
+    assert.match(html, /README\.md/);
+    assert.match(html, /data-project-rail/);
+    assert.match(html, /Latest changes/);
+  });
+
+  it('renders workspace settings fields and setup wizard', function () {
+    const html = renderProjectTemplate({
+      project: {
+        id: 'proj-settings',
+        name: 'Settings Project',
+        description: 'Regression test project',
+        status: 'active',
+        created_at: '2026-03-27T17:00:00.000Z',
+        last_activity: '2026-03-27T17:01:00.000Z',
+        memory_namespace: 'memory.proj-settings',
+        workspace_dir: '/tmp/proj-settings',
+        sessions: [],
+        workflows: [],
+        agents: [
+          {
+            id: 'agent-openclaw-main',
+            name: 'OpenClaw Main',
+            kind: 'openclaw',
+            role: 'software engineer',
+          },
+        ],
+        settings_json: {
+          code_folder: '/home/tom/code',
+          subfolders: ['pave', 'sec'],
+          ignore_folders: ['node_modules', 'dist'],
+          getting_started: 'Read README.md first.',
+        },
+      },
+      activeTab: 'settings',
+      activeSession: '',
+      currentSession: null,
+      messages: [],
+      logs: [],
+      artifacts: [],
+      agents: [
+        {
+          id: 'agent-openclaw-main',
+          name: 'OpenClaw Main',
+          kind: 'openclaw',
+          role: 'software engineer',
+        },
+      ],
+      planning: { currentState: [], now: [], health: [] },
+      sidebarProjects: [],
+      projectGroups: {
+        recent: [],
+        favourites: [],
+        favorites: [],
+        general: [],
+        pave: [],
+        sec06: [],
+        archived: [],
+      },
+      stats: {
+        sessionCount: 0,
+        workflowCount: 0,
+        agentCount: 1,
+        messageCount: 0,
+        logCount: 0,
+        artifactCount: 0,
+        activeSession: '',
+        activeWorkflowCount: 0,
+        idleWorkflowCount: 0,
+        latestWorkflow: null,
+        latestSession: null,
+        latestMessage: null,
+        latestLog: null,
+        workflowStates: {},
+        importedFrom: '',
+      },
+      conversationAgent: {
+        id: 'agent-openclaw-main',
+        name: 'OpenClaw Main',
+        kind: 'openclaw',
+        role: 'software engineer',
+      },
+      codexModel: 'gpt-5.3-codex',
+      codexConfigured: false,
+      projectTabs: [
+        'overview',
+        'conversations',
+        'main-agent',
+        'workflows',
+        'memory',
+        'files',
+        'logs',
+        'settings',
+      ],
+      workflowIdFromQuery: '',
+      formatRelativeTime: (value) => value,
+      formatDateTime: (value) => value,
+      projectMemory: {
+        recentArtifacts: [],
+      },
+      projectSettingsWizard: {
+        codeFolder: '/home/tom/code',
+        suggestedSubfolders: ['pave', 'sec'],
+        commonIgnoreFolders: ['node_modules', 'dist', 'build'],
+        starterInstructions: 'Read README.md first.',
+      },
+    });
+
+    assert.match(html, /Workspace configuration/);
+    assert.match(
+      html,
+      /<a class="tab [^"]*tab--utility[^"]*" href="\/project\/proj-settings\?tab=settings(?:&amp;session=ses-1)?">Settings<\/a>/,
+    );
+    assert.match(html, /name="code_folder"/);
+    assert.match(html, /name="getting_started"/);
+    assert.match(html, /Setup guide/);
+    assert.match(html, /wizard_use_code_folder_btn/);
+    assert.match(html, /wizard_fill_instructions_btn/);
+    assert.doesNotMatch(html, /name="subfolders"/);
+    assert.doesNotMatch(html, /name="ignore_folders"/);
+    assert.doesNotMatch(html, /wizard_fill_subfolders_btn/);
+    assert.doesNotMatch(html, /wizard_fill_ignores_btn/);
   });
 });

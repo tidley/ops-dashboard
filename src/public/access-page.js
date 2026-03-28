@@ -14,8 +14,277 @@
     return new Date().toISOString();
   }
 
+  const FIXED_RELAYS = [
+    'wss://relay.damus.io',
+    'wss://relay.primal.net',
+    'wss://relay.nostr.band',
+    'wss://relay.snort.social',
+    'wss://nos.lol',
+    'wss://nostr.mom',
+  ];
+
   function setText(el, value) {
     if (el) el.textContent = value;
+  }
+
+  var STATUS_MIN_INTERVAL_MS = 750;
+
+  function setButtonBusy(button, isBusy) {
+    if (!button) return;
+    button.disabled = Boolean(isBusy);
+    if (button.classList && typeof button.classList.toggle === 'function') {
+      button.classList.toggle('is-busy', Boolean(isBusy));
+    }
+    if (typeof button.setAttribute === 'function') {
+      if (isBusy) {
+        button.setAttribute('aria-busy', 'true');
+      } else {
+        button.removeAttribute('aria-busy');
+      }
+    }
+  }
+
+  function createStatusQueueState() {
+    return {
+      client: {
+        queue: [],
+        timer: null,
+        idleTimer: null,
+        lastChangeAt: 0,
+      },
+      server: {
+        queue: [],
+        timer: null,
+        idleTimer: null,
+        lastChangeAt: 0,
+      },
+    };
+  }
+
+  var statusState = createStatusQueueState();
+  var statusPanels = {
+    client: null,
+    server: null,
+  };
+
+  function getStatusEl(lane) {
+    return lane === 'server' ? statusPanels.server : statusPanels.client;
+  }
+
+  function setStatusLive(lane, isLive) {
+    var el = getStatusEl(lane);
+    if (!el) return;
+    el.classList.toggle('is-live', Boolean(isLive));
+  }
+
+  function setStatusText(lane, value) {
+    var el = getStatusEl(lane);
+    if (!el) return;
+    el.textContent = value;
+  }
+
+  var startupStepEls = {
+    prepare: null,
+    sign: null,
+    publish: null,
+    verify: null,
+    issue: null,
+    cookie: null,
+    connect: null,
+    session: null,
+  };
+
+  var startupStepState = {
+    current: null,
+    queue: [],
+    timer: null,
+    lastChangeAt: 0,
+  };
+
+  var STARTUP_STEP_MIN_INTERVAL_MS = 750;
+
+  function clearStartupStepTimer() {
+    if (startupStepState.timer) {
+      clearTimeout(startupStepState.timer);
+      startupStepState.timer = null;
+    }
+  }
+
+  function applyStartupStep(step) {
+    var state = startupStepState;
+    var nextStep = step || null;
+    var currentStep = state.current;
+    if (currentStep && currentStep !== nextStep) {
+      var currentEl = startupStepEls[currentStep];
+      if (currentEl && currentEl.classList && typeof currentEl.classList.remove === 'function') {
+        currentEl.classList.add('is-complete');
+        currentEl.classList.remove('is-current');
+      }
+    }
+
+    state.current = nextStep;
+    state.lastChangeAt = Date.now();
+
+    if (!nextStep) return;
+    var el = startupStepEls[nextStep];
+    if (!el || !el.classList || typeof el.classList.add !== 'function') return;
+    el.classList.add('is-current');
+  }
+
+  function pumpStartupStepQueue() {
+    var state = startupStepState;
+    if (state.timer) return;
+    if (!state.queue.length) return;
+
+    var delay = Math.max(
+      0,
+      STARTUP_STEP_MIN_INTERVAL_MS - (Date.now() - state.lastChangeAt),
+    );
+
+    state.timer = setTimeout(function() {
+      state.timer = null;
+      if (!state.queue.length) return;
+      applyStartupStep(state.queue.shift());
+      pumpStartupStepQueue();
+    }, delay);
+  }
+
+  function setStartupStepCurrent(step) {
+    var state = startupStepState;
+    var nextStep = step || null;
+    if (!nextStep) return;
+    if (state.current === nextStep) return;
+    if (state.queue.indexOf(nextStep) !== -1) return;
+    state.queue.push(nextStep);
+    pumpStartupStepQueue();
+  }
+
+  function setStartupStepComplete(step) {
+    var el = startupStepEls[step];
+    if (!el || !el.classList || typeof el.classList.add !== 'function') return;
+    el.classList.add('is-complete');
+    if (startupStepState.current === step) {
+      startupStepState.current = null;
+      el.classList.remove('is-current');
+    }
+  }
+
+  function clearStatusTimers(lane) {
+    var state = statusState[lane];
+    if (!state) return;
+    if (state.timer) {
+      clearTimeout(state.timer);
+      state.timer = null;
+    }
+    if (state.idleTimer) {
+      clearTimeout(state.idleTimer);
+      state.idleTimer = null;
+    }
+  }
+
+  function primeStatusLane(lane, value) {
+    var state = statusState[lane];
+    if (!state) return;
+    clearStatusTimers(lane);
+    state.queue.length = 0;
+    state.lastChangeAt = Date.now();
+    setStatusText(lane, value);
+    setStatusLive(lane, true);
+    state.idleTimer = setTimeout(function() {
+      var activeState = statusState[lane];
+      if (!activeState || activeState.queue.length || activeState.timer) return;
+      setStatusLive(lane, false);
+      activeState.idleTimer = null;
+    }, STATUS_MIN_INTERVAL_MS);
+  }
+
+  function pumpStatusLane(lane) {
+    var state = statusState[lane];
+    if (!state || state.timer) return;
+    if (!state.queue.length) {
+      if (state.idleTimer) clearTimeout(state.idleTimer);
+      state.idleTimer = setTimeout(function() {
+        var activeState = statusState[lane];
+        if (!activeState || activeState.queue.length || activeState.timer) return;
+        setStatusLive(lane, false);
+        activeState.idleTimer = null;
+      }, STATUS_MIN_INTERVAL_MS);
+      return;
+    }
+
+    var delay = Math.max(
+      0,
+      STATUS_MIN_INTERVAL_MS - (Date.now() - state.lastChangeAt),
+    );
+
+    state.timer = setTimeout(function() {
+      var activeState = statusState[lane];
+      if (!activeState) return;
+      activeState.timer = null;
+      if (!activeState.queue.length) {
+        pumpStatusLane(lane);
+        return;
+      }
+
+      var nextValue = activeState.queue.shift();
+      setStatusText(lane, nextValue);
+      setStatusLive(lane, true);
+      activeState.lastChangeAt = Date.now();
+      pumpStatusLane(lane);
+    }, delay);
+  }
+
+  function queueStatus(lane, value) {
+    var state = statusState[lane];
+    if (!state || !getStatusEl(lane)) return;
+    if (state.idleTimer) {
+      clearTimeout(state.idleTimer);
+      state.idleTimer = null;
+    }
+    state.queue.push(String(value || ''));
+    setStatusLive(lane, true);
+    pumpStatusLane(lane);
+  }
+
+  function updateLoginBorder(isActive) {
+    if (!document.body || !document.body.classList) return;
+    document.body.classList.toggle('access-login-pending', Boolean(isActive));
+  }
+
+  function startGlowCycle() {
+    if (!document || typeof document.querySelectorAll !== 'function') return;
+    const nodes = Array.prototype.slice.call(
+      document.querySelectorAll('.access-brand__node'),
+    );
+    if (!nodes.length || window.__accessGlowTimer) return;
+
+    function setActiveNode(index) {
+      nodes.forEach(function (node, nodeIndex) {
+        node.classList.toggle('is-active', nodeIndex === index);
+      });
+    }
+
+    var currentIndex = Math.floor(Math.random() * nodes.length);
+    var scheduleNext = function() {
+      window.__accessGlowTimer = setTimeout(function() {
+        if (!nodes.length) return;
+        var nextIndex = Math.floor(Math.random() * nodes.length);
+        if (nodes.length > 1 && nextIndex === currentIndex) {
+          nextIndex = (nextIndex + 1) % nodes.length;
+        }
+        currentIndex = nextIndex;
+        setActiveNode(currentIndex);
+        scheduleNext();
+      }, 640 + Math.floor(Math.random() * 560));
+    };
+
+    setActiveNode(currentIndex);
+    scheduleNext();
+  }
+
+  function setLoginGlow(isActive) {
+    updateLoginBorder(isActive);
+    startGlowCycle();
   }
 
   function parseNsec(value) {
@@ -73,22 +342,8 @@
     return null;
   }
 
-  function normalizeRelayUrls(raw) {
-    return `${raw || ''}`
-      .split(/[\s,]+/)
-      .map(value => value.trim())
-      .filter(Boolean)
-      .map(relay => {
-        if (relay.includes('://')) return relay;
-        return `wss://${relay}`;
-      })
-      .filter((relay, index, arr) => arr.indexOf(relay) === index);
-  }
-
   function currentRelayUrls() {
-    const field = document.getElementById('amber_relays');
-    const raw = (field && field.value) || (window.ACCESS_GATEWAY && window.ACCESS_GATEWAY.relayUrls) || '';
-    return normalizeRelayUrls(raw);
+    return FIXED_RELAYS.slice();
   }
 
   function getSimplePool() {
@@ -127,13 +382,7 @@
   }
 
   function getNextUrl() {
-    try {
-      const search = (window.location && window.location.search) || '';
-      const params = new URLSearchParams(search);
-      return params.get('next') || '/';
-    } catch {
-      return '/';
-    }
+    return '/';
   }
 
   function navigateToNextUrl() {
@@ -482,59 +731,108 @@
 
   async function bootstrapWithEvent(client, event, payload) {
     const result = await client.bootstrap('/api/access/bootstrap', event, { payload: payload || {} });
-    setText(sessionIdEl, result.session.id);
-    setText(signalUrlEl, result.signal_url);
-    setText(proxyUrlEl, result.proxy_url);
-    eventJson.value = JSON.stringify(event, null, 2);
+    const sessionId =
+      `${(result && result.session && result.session.id) || result.session_id || client.sessionId || ''}`.trim();
+    const signalUrl =
+      `${result && result.signal_url ? result.signal_url : ''}`.trim();
+    const proxyUrl =
+      `${result && result.proxy_url ? result.proxy_url : ''}`.trim();
+    if (!sessionId) throw new Error('missing_session_id');
+
+    if (client && !client.sessionId) {
+      client.sessionId = sessionId;
+    }
+
+    setStartupStepComplete('issue');
+    setStartupStepCurrent('cookie');
+    setText(sessionIdEl, sessionId);
+    setText(signalUrlEl, signalUrl || '(pending)');
+    setText(proxyUrlEl, proxyUrl || '(pending)');
+    queueStatus('server', 'Gateway issued session ' + sessionId + '.');
     if (result.bootstrap_cookie_token) {
       try {
-        await confirmSessionCookie(result.session.id, result.bootstrap_cookie_token);
+        queueStatus('client', 'Confirming session cookie...');
+        await confirmSessionCookie(sessionId, result.bootstrap_cookie_token);
       } catch (err) {
-        setPreview(String(err && err.message ? err.message : err));
+        queueStatus('client', String(err && err.message ? err.message : err));
       }
     }
     setAccessStage('connecting');
-    setPreview('Connecting WebRTC data channel...');
+    setStartupStepComplete('cookie');
+    setStartupStepCurrent('connect');
+    setStartupStepComplete('connect');
+    queueStatus('client', 'Connecting WebRTC data channel...');
     try {
       await connectWithTimeout(client);
+      setLoginGlow(false);
+      setStartupStepComplete('session');
+      setStartupStepCurrent('session');
       setAccessStage('session');
-      setPreview('Connected to access session ' + client.sessionId);
+      queueStatus('client', 'Connected to access session ' + client.sessionId);
+      queueStatus('server', 'Session active.');
     } catch (err) {
       try {
         client.close();
       } catch {}
-      setPreview('WebRTC unavailable, continuing with the authenticated dashboard...');
+      setLoginGlow(false);
+      setStartupStepComplete('session');
+      setStartupStepCurrent('session');
+      queueStatus('client', 'WebRTC unavailable, continuing with the authenticated dashboard...');
       setTimeout(navigateToNextUrl, 500);
     }
     return result;
   }
 
   function setPreview(value) {
-    preview.textContent = value;
+    queueStatus('client', value);
+  }
+
+  function setServerPreview(value) {
+    queueStatus('server', value);
   }
 
   var nip07LoginBtn = qs('nip07_login_btn');
+  var signerTab = qs('signer_tab');
   var amberTab = qs('amber_tab');
   var nsecTab = qs('nsec_tab');
   var nip07Tab = qs('nip07_tab');
   var nsecBtn = qs('nsec_login_btn');
-  var bootstrapBtn = qs('bootstrap_btn');
   var connectBtn = qs('connect_btn');
   var fetchBtn = qs('fetch_btn');
   var amberLoginBtn = qs('amber_login_btn');
-  var amberRelays = qs('amber_relays');
-  var amberUri = qs('amber_uri');
   var nsecValue = qs('nsec_value');
-  var eventJson = qs('event_json');
-  var preview = qs('preview');
+  var clientStatus = qs('client_status');
+  var serverStatus = qs('server_status');
+  statusPanels.client = clientStatus;
+  statusPanels.server = serverStatus;
+  startupStepEls.prepare = qs('startup_step_prepare');
+  startupStepEls.sign = qs('startup_step_sign');
+  startupStepEls.publish = qs('startup_step_publish');
+  startupStepEls.verify = qs('startup_step_verify');
+  startupStepEls.issue = qs('startup_step_issue');
+  startupStepEls.cookie = qs('startup_step_cookie');
+  startupStepEls.connect = qs('startup_step_connect');
+  startupStepEls.session = qs('startup_step_session');
   var sessionIdEl = qs('session_id');
   var signalUrlEl = qs('signal_url');
   var proxyUrlEl = qs('proxy_url');
   var sessionMeta = qs('session_meta');
+  var authPrompt = qs('auth_prompt');
+  var signerPanel = qs('signer_panel');
   var nip07Panel = qs('nip07_panel');
   var amberPanel = qs('amber_panel');
   var nsecPanel = qs('nsec_panel');
-  var authMode = 'nip07';
+  var authButtons = [
+    signerTab,
+    nip07Tab,
+    amberTab,
+    nsecTab,
+    nip07LoginBtn,
+    amberLoginBtn,
+    nsecBtn,
+  ].filter(Boolean);
+  var authMode = 'signer';
+  var signerMethod = 'nip07';
   var sessionStage = qs('session_stage');
   var client = null;
   var amberRuntime = null;
@@ -553,12 +851,35 @@
 
   function setAuthMode(mode) {
     authMode = mode;
-    if (nip07Panel) nip07Panel.hidden = mode !== 'nip07';
-    if (amberPanel) amberPanel.hidden = mode !== 'amber';
+    if (signerPanel) signerPanel.hidden = mode !== 'signer';
     if (nsecPanel) nsecPanel.hidden = mode !== 'nsec';
-    setTabActive(nip07Tab, mode === 'nip07');
-    setTabActive(amberTab, mode === 'amber');
+    if (mode !== 'signer') {
+      if (nip07Panel) nip07Panel.hidden = true;
+      if (amberPanel) amberPanel.hidden = true;
+    } else {
+      setSignerMethod(signerMethod || 'nip07');
+    }
+    setTabActive(signerTab, mode === 'signer');
     setTabActive(nsecTab, mode === 'nsec');
+  }
+
+  function setSignerMethod(method) {
+    signerMethod = method;
+    if (nip07Panel) nip07Panel.hidden = method !== 'nip07';
+    if (amberPanel) amberPanel.hidden = method !== 'amber';
+    setTabActive(nip07Tab, method === 'nip07');
+    setTabActive(amberTab, method === 'amber');
+  }
+
+  function setAuthPrompt(mode) {
+    if (!authPrompt) return;
+    authPrompt.textContent = mode === 'signer' ? 'Select signer' : 'Enter nsec';
+  }
+
+  function setAuthButtonsBusy(isBusy) {
+    authButtons.forEach(function (button) {
+      setButtonBusy(button, isBusy);
+    });
   }
 
   function setAccessStage(stage) {
@@ -575,56 +896,98 @@
   }
 
   setAccessStage('auth');
-  setAuthMode('nip07');
+  setAuthMode('signer');
+  setSignerMethod('nip07');
+  setAuthPrompt('signer');
+  setStatusText('client', 'Waiting for sign in…');
+  setStatusText('server', 'Waiting for bootstrap request…');
+  setStatusLive('client', false);
+  setStatusLive('server', false);
+  startGlowCycle();
   clearSessionFields();
 
+  signerTab.addEventListener('click', function () {
+    setAuthMode('signer');
+    setAuthPrompt('signer');
+  });
+
+  nsecTab.addEventListener('click', function () {
+    setAuthMode('nsec');
+    setAuthPrompt('nsec');
+  });
+
   nip07Tab.addEventListener('click', function() {
-    setAuthMode('nip07');
+    setAuthMode('signer');
+    setAuthPrompt('signer');
+    setSignerMethod('nip07');
   });
 
   amberTab.addEventListener('click', function() {
-    setAuthMode('amber');
+    setAuthMode('signer');
+    setAuthPrompt('signer');
+    setSignerMethod('amber');
   });
 
-  nsecTab.addEventListener('click', function() {
-    setAuthMode('nsec');
-  });
-
-  nip07LoginBtn.addEventListener('click', async function() {
+  nip07LoginBtn.addEventListener('click', async function (event) {
+    const button =
+      event && event.currentTarget ? event.currentTarget : nip07LoginBtn;
+    setAuthButtonsBusy(true);
+    setLoginGlow(true);
+    setStartupStepCurrent('prepare');
     try {
       setAccessStage('auth');
-      setPreview('Waiting for NIP-07 approval...');
+      primeStatusLane('client', 'Waiting for NIP-07 approval...');
+      primeStatusLane('server', 'Waiting for bootstrap request...');
       const payload = buildPayload();
-      const event = await buildSignedEventWithNip07(payload);
-      const signalTransport = createRelayTransport(window.nostr, event.pubkey, 'plain');
+      const signedEvent = await buildSignedEventWithNip07(payload);
+      setStartupStepComplete('sign');
+      setStartupStepCurrent('publish');
+      const signalTransport = createRelayTransport(
+        window.nostr,
+        signedEvent.pubkey,
+        'plain',
+      );
       client = new window.AccessWebRtcProxy({ signalTransport });
-      setPreview('Bootstrapping access...');
-      await bootstrapWithEvent(client, event, payload);
+      queueStatus('client', 'Bootstrapping access via Nostr...');
+      queueStatus('server', 'Gateway verifying signed bootstrap request...');
+      setStartupStepCurrent('verify');
+      await bootstrapWithEvent(client, signedEvent, payload);
     } catch (err) {
-      setPreview(String(err && err.message ? err.message : err));
+      queueStatus('client', String(err && err.message ? err.message : err));
+      setAuthButtonsBusy(false);
+      setLoginGlow(false);
     }
   });
 
-  amberLoginBtn.addEventListener('click', async function() {
+  amberLoginBtn.addEventListener('click', async function (event) {
+    const button =
+      event && event.currentTarget ? event.currentTarget : amberLoginBtn;
+    setAuthButtonsBusy(true);
+    setLoginGlow(true);
+    setStartupStepCurrent('prepare');
     try {
       await closeAmberRuntime(amberRuntime);
       amberRuntime = null;
-      const relays = normalizeRelayUrls(amberRelays.value);
-      if (!relays.length) throw new Error('amber_relays_required');
-      if (!window.NostrTools || typeof window.NostrTools.generateSecretKey !== 'function' || typeof window.NostrTools.getPublicKey !== 'function') {
+      if (
+        !window.NostrTools ||
+        typeof window.NostrTools.generateSecretKey !== 'function' ||
+        typeof window.NostrTools.getPublicKey !== 'function'
+      ) {
         throw new Error('nostr_tools_unavailable');
       }
 
-      setPreview('Preparing Amber / Nostr Connect session...');
+      primeStatusLane('client', 'Preparing Amber session...');
+      primeStatusLane('server', 'Waiting for bootstrap request...');
       const nip46 = await loadNip46Module();
       const localSecretKey = window.NostrTools.generateSecretKey();
       const clientPubkey = window.NostrTools.getPublicKey(localSecretKey);
       const connectionSecret = getRandomSecret();
+      const relays = currentRelayUrls();
       const connectionUri = nip46.createNostrConnectURI({
         clientPubkey,
         relays,
         secret: connectionSecret,
-        name: 'Ops Dashboard',
+        name: 'vibez',
         url: window.location.origin,
       });
 
@@ -635,17 +998,18 @@
         relays,
       };
 
-      amberUri.value = connectionUri;
-      eventJson.value = '';
       setAccessStage('auth');
 
-      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
-        navigator.clipboard.writeText(connectionUri).catch(function() {});
+      if (
+        navigator.clipboard &&
+        typeof navigator.clipboard.writeText === 'function'
+      ) {
+        navigator.clipboard.writeText(connectionUri).catch(function () {});
       }
 
-      setPreview('Opening Amber / Nostr Connect...');
+      queueStatus('client', 'Opening Amber...');
       openExternalUri(connectionUri);
-      setPreview('Approve the Amber request.');
+      queueStatus('client', 'Approve the Amber request.');
       amberRuntime.signer = await nip46.BunkerSigner.fromURI(
         localSecretKey,
         connectionUri,
@@ -654,39 +1018,58 @@
       );
 
       const payload = buildPayload();
-      const event = await buildSignedEventWithSigner(payload, amberRuntime.signer);
-      client = new window.AccessWebRtcProxy({ signalTransport: createRelayTransport(amberRuntime.signer, event.pubkey, 'plain') });
-      setPreview('Bootstrapping access...');
-      await bootstrapWithEvent(client, event, payload);
+      const signedEvent = await buildSignedEventWithSigner(
+        payload,
+        amberRuntime.signer,
+      );
+      setStartupStepComplete('sign');
+      setStartupStepCurrent('publish');
+      client = new window.AccessWebRtcProxy({
+        signalTransport: createRelayTransport(
+          amberRuntime.signer,
+          signedEvent.pubkey,
+          'plain',
+        ),
+      });
+      queueStatus('client', 'Bootstrapping access via Nostr...');
+      queueStatus('server', 'Gateway verifying signed bootstrap request...');
+      setStartupStepCurrent('verify');
+      await bootstrapWithEvent(client, signedEvent, payload);
     } catch (err) {
-      setPreview(String(err && err.message ? err.message : err));
+      queueStatus('client', String(err && err.message ? err.message : err));
+      setAuthButtonsBusy(false);
+      setLoginGlow(false);
     } finally {
+      setLoginGlow(false);
       await closeAmberRuntime(amberRuntime);
       amberRuntime = null;
     }
   });
 
-  nsecBtn.addEventListener('click', async function() {
+  nsecBtn.addEventListener('click', async function (event) {
+    const button = event && event.currentTarget ? event.currentTarget : nsecBtn;
+    setAuthButtonsBusy(true);
+    setLoginGlow(true);
+    setStartupStepCurrent('prepare');
     try {
+      primeStatusLane('client', 'Preparing local signing...');
+      primeStatusLane('server', 'Waiting for bootstrap request...');
       const signer = createLocalSignerAdapterFromNsec(nsecValue.value);
       const payload = buildPayload();
-      client = new window.AccessWebRtcProxy({ signalTransport: createRelayTransport(signer) });
-      const event = buildWrappedEventWithNsec(payload, nsecValue.value);
-      setPreview('Bootstrapping access...');
-      await bootstrapWithEvent(client, event, payload);
+      client = new window.AccessWebRtcProxy({
+        signalTransport: createRelayTransport(signer),
+      });
+      const wrappedEvent = buildWrappedEventWithNsec(payload, nsecValue.value);
+      setStartupStepComplete('sign');
+      setStartupStepCurrent('publish');
+      queueStatus('client', 'Bootstrapping access via Nostr...');
+      queueStatus('server', 'Gateway verifying signed bootstrap request...');
+      setStartupStepCurrent('verify');
+      await bootstrapWithEvent(client, wrappedEvent, payload);
     } catch (err) {
-      setPreview(String(err && err.message ? err.message : err));
-    }
-  });
-
-  bootstrapBtn.addEventListener('click', async function() {
-    try {
-      const parsed = JSON.parse(eventJson.value);
-      client = new window.AccessWebRtcProxy();
-      setPreview('Bootstrapping access...');
-      await bootstrapWithEvent(client, parsed);
-    } catch (err) {
-      setPreview(String(err && err.message ? err.message : err));
+      queueStatus('client', String(err && err.message ? err.message : err));
+      setAuthButtonsBusy(false);
+      setLoginGlow(false);
     }
   });
 
@@ -694,15 +1077,15 @@
     if (!client) return;
     try {
       setAccessStage('connecting');
-      setPreview('Connecting WebRTC data channel...');
+      queueStatus('client', 'Connecting WebRTC data channel...');
       await connectWithTimeout(client);
       setAccessStage('session');
-      setPreview('Connected to access session ' + client.sessionId);
+      queueStatus('client', 'Connected to access session ' + client.sessionId);
     } catch (err) {
       try {
         client.close();
       } catch {}
-      setPreview('WebRTC unavailable, continuing with the authenticated dashboard...');
+      queueStatus('client', 'WebRTC unavailable, continuing with the authenticated dashboard...');
       setTimeout(navigateToNextUrl, 500);
     }
   });
@@ -714,16 +1097,16 @@
         await client.connect();
       }
       setAccessStage('session');
-      setPreview('Fetching dashboard HTML through the data channel...');
+      queueStatus('client', 'Fetching dashboard HTML through the data channel...');
       var response = await client.proxyFetch('/', { method: 'GET' });
-      setPreview([
+      queueStatus('client', [
         'status: ' + response.status,
         'headers: ' + JSON.stringify(response.headers, null, 2),
         '',
         response.body.slice(0, 3000),
       ].join('\n'));
     } catch (err) {
-      setPreview(String(err && err.message ? err.message : err));
+      queueStatus('client', String(err && err.message ? err.message : err));
     }
   });
 })();

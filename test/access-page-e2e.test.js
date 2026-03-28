@@ -4,6 +4,7 @@ const path = require('path');
 const vm = require('vm');
 
 function createElement(id) {
+  const classNames = new Set();
   return {
     id,
     value: '',
@@ -13,6 +14,35 @@ function createElement(id) {
     style: {},
     rel: '',
     href: '',
+    classList: {
+      add(...tokens) {
+        tokens.forEach(token => {
+          if (token) classNames.add(token);
+        });
+      },
+      remove(...tokens) {
+        tokens.forEach(token => classNames.delete(token));
+      },
+      toggle(token, force) {
+        if (force === true) {
+          classNames.add(token);
+          return true;
+        }
+        if (force === false) {
+          classNames.delete(token);
+          return false;
+        }
+        if (classNames.has(token)) {
+          classNames.delete(token);
+          return false;
+        }
+        classNames.add(token);
+        return true;
+      },
+      contains(token) {
+        return classNames.has(token);
+      },
+    },
     listeners: {},
     addEventListener(type, handler) {
       this.listeners[type] = handler;
@@ -29,24 +59,24 @@ function createElement(id) {
 
 function createFakeBrowserHarness() {
   const ids = [
+    'signer_tab',
     'nip07_tab',
     'amber_tab',
     'nsec_tab',
     'nip07_login_btn',
     'amber_login_btn',
     'nsec_login_btn',
-    'bootstrap_btn',
     'connect_btn',
     'fetch_btn',
     'session_stage',
-    'amber_relays',
-    'amber_uri',
+    'auth_prompt',
     'nsec_value',
-    'event_json',
-    'preview',
+    'client_status',
+    'server_status',
     'session_id',
     'signal_url',
     'proxy_url',
+    'signer_panel',
     'nip07_panel',
     'amber_panel',
     'nsec_panel',
@@ -74,7 +104,6 @@ function createFakeBrowserHarness() {
       app: 'ops-dashboard.access.v1',
       gatewayPubkey: 'gateway-pubkey-test',
       gatewayNpub: 'npub1gatewaypubkeytest',
-      relayUrls: 'wss://relay.example.one, wss://relay.example.two',
     },
     FIPS_STUN_URL: 'stun:fips.example:3478',
     crypto: {
@@ -217,9 +246,7 @@ describe('access page e2e', function() {
         this.bootstrapCalls.push({ bootstrapUrl, bootstrapEvent, bootstrapMeta });
         return {
           ok: true,
-          session: {
-            id: bootstrapMeta.payload.session_id,
-          },
+          session_id: bootstrapMeta.payload.session_id,
           signal_url: `/api/access/sessions/${bootstrapMeta.payload.session_id}/signal`,
           proxy_url: `/api/access/sessions/${bootstrapMeta.payload.session_id}/proxy`,
         };
@@ -247,11 +274,21 @@ describe('access page e2e', function() {
 
     vm.runInContext(script, context, { filename: 'access-page.js' });
 
+    assert.equal(harness.document.getElementById('signer_panel').hidden, false);
     assert.equal(harness.document.getElementById('nip07_panel').hidden, false);
     assert.equal(harness.document.getElementById('amber_panel').hidden, true);
     assert.equal(harness.document.getElementById('nsec_panel').hidden, true);
 
-    await harness.document.getElementById('nip07_login_btn').click();
+    const nip07LoginBtn = harness.document.getElementById('nip07_login_btn');
+    const clickPromise = nip07LoginBtn.click();
+    assert.equal(nip07LoginBtn.disabled, true, 'expected the login button to disable immediately after click');
+    assert.equal(harness.document.getElementById('signer_tab').disabled, true, 'expected the outer tab to disable immediately after click');
+    assert.equal(harness.document.getElementById('nip07_tab').disabled, true, 'expected the NIP-07 tab to disable immediately after click');
+    assert.equal(harness.document.getElementById('amber_tab').disabled, true, 'expected the Amber tab to disable immediately after click');
+    assert.equal(harness.document.getElementById('nsec_tab').disabled, true, 'expected the nsec tab to disable immediately after click');
+    assert.equal(harness.document.getElementById('amber_login_btn').disabled, true, 'expected the Amber login button to disable immediately after click');
+    assert.equal(harness.document.getElementById('nsec_login_btn').disabled, true, 'expected the nsec login button to disable immediately after click');
+    await clickPromise;
 
     const instance = FakeAccessWebRtcProxy.instances[0];
     assert.ok(instance, 'expected the access page to construct a WebRTC proxy');
@@ -259,21 +296,36 @@ describe('access page e2e', function() {
     assert.equal(instance.signalTransport.constructor.name, 'RelaySignalTransport');
     assert.equal(
       JSON.stringify(instance.signalTransport.relays),
-      JSON.stringify(['wss://relay.example.one', 'wss://relay.example.two']),
+      JSON.stringify([
+        'wss://relay.damus.io',
+        'wss://relay.primal.net',
+        'wss://relay.nostr.band',
+        'wss://relay.snort.social',
+        'wss://nos.lol',
+        'wss://nostr.mom',
+      ]),
     );
     assert.equal(instance.bootstrapCalls.length, 1, 'expected bootstrap to run once');
     assert.equal(instance.bootstrapCalls[0].bootstrapMeta.payload.transport, 'webrtc-direct');
     assert.equal(
       JSON.stringify(instance.bootstrapCalls[0].bootstrapMeta.payload.relay_urls),
-      JSON.stringify(['wss://relay.example.one', 'wss://relay.example.two']),
+      JSON.stringify([
+        'wss://relay.damus.io',
+        'wss://relay.primal.net',
+        'wss://relay.nostr.band',
+        'wss://relay.snort.social',
+        'wss://nos.lol',
+        'wss://nostr.mom',
+      ]),
     );
     assert.equal(instance.bootstrapCalls[0].bootstrapEvent.pubkey, 'pub-browser-nip07');
     assert.equal(instance.connectCalls, 1, 'expected the page to auto-connect after bootstrap');
     assert.equal(harness.document.getElementById('session_stage').hidden, false);
     assert.match(harness.document.getElementById('session_id').textContent, /^acc-/);
     assert.equal(harness.document.getElementById('fetch_btn').disabled, false);
-    assert.match(harness.document.getElementById('preview').textContent, /Connected to access session/);
-    assert.notEqual(harness.document.getElementById('event_json').value.trim(), '');
+    await new Promise(resolve => setTimeout(resolve, 2800));
+    assert.match(harness.document.getElementById('client_status').textContent, /Connected to access session/);
+    assert.match(harness.document.getElementById('server_status').textContent, /Session active\./);
   });
 
   it('switches to the relevant fields for each sign-in tab', async function() {
@@ -293,19 +345,24 @@ describe('access page e2e', function() {
 
     vm.runInContext(script, context, { filename: 'access-page.js' });
 
+    assert.equal(harness.document.getElementById('signer_panel').hidden, false);
     assert.equal(harness.document.getElementById('nip07_panel').hidden, false);
     assert.equal(harness.document.getElementById('amber_panel').hidden, true);
     assert.equal(harness.document.getElementById('nsec_panel').hidden, true);
+    assert.equal(harness.document.getElementById('auth_prompt').textContent, 'Select signer');
 
     await harness.document.getElementById('amber_tab').click();
+    assert.equal(harness.document.getElementById('signer_panel').hidden, false);
     assert.equal(harness.document.getElementById('nip07_panel').hidden, true);
     assert.equal(harness.document.getElementById('amber_panel').hidden, false);
     assert.equal(harness.document.getElementById('nsec_panel').hidden, true);
+    assert.equal(harness.document.getElementById('auth_prompt').textContent, 'Select signer');
 
     await harness.document.getElementById('nsec_tab').click();
-    assert.equal(harness.document.getElementById('nip07_panel').hidden, true);
+    assert.equal(harness.document.getElementById('signer_panel').hidden, true);
     assert.equal(harness.document.getElementById('amber_panel').hidden, true);
     assert.equal(harness.document.getElementById('nsec_panel').hidden, false);
+    assert.equal(harness.document.getElementById('auth_prompt').textContent, 'Enter nsec');
   });
 
   it('falls back to the authenticated dashboard when WebRTC connect fails', async function() {
@@ -354,9 +411,9 @@ describe('access page e2e', function() {
     vm.runInContext(script, context, { filename: 'access-page.js' });
 
     await harness.document.getElementById('nip07_login_btn').click();
-    await new Promise(resolve => setTimeout(resolve, 700));
+    await new Promise(resolve => setTimeout(resolve, 2800));
 
     assert.equal(harness.getNavigationTarget(), '/');
-    assert.match(harness.document.getElementById('preview').textContent, /WebRTC unavailable/i);
+    assert.match(harness.document.getElementById('client_status').textContent, /WebRTC unavailable/i);
   });
 });

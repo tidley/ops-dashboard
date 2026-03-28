@@ -34,6 +34,7 @@ function defaultRelayUrls() {
       'wss://relay.nostr.band',
       'wss://relay.snort.social',
       'wss://nos.lol',
+      'wss://nostr.mom',
     ].join(','),
   );
 }
