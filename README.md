@@ -5,12 +5,13 @@ Vibez is a vibe coded app for your vibe coded apps.
 Vibez is a vibe coded app for your vibe coded apps.
 
 Self-hosted multi-agent, multi-project, multi-workflow operator dashboard.
-<img width="572" height="654" alt="image" src="https://github.com/user-attachments/assets/05dee1ba-5823-4331-a3be-b3cb8e9fdc39" />
+<img width="580" height="741" alt="image" src="https://github.com/user-attachments/assets/3f068d95-bd95-4c10-b789-81cf75ca713b" />
 
-<img width="700" height="500" alt="image" src="https://github.com/user-attachments/assets/d476c317-a21e-4c03-8a6e-5aabdbaa5ea1" />
+<img width="1413" height="834" alt="image" src="https://github.com/user-attachments/assets/f5e136be-ebad-4497-b59e-9f8e35c51a94" />
 
+<img width="1413" height="834" alt="image" src="https://github.com/user-attachments/assets/7d42e755-f7a6-4733-9369-3324897c8820" />
 
-<img width="358" height="800" alt="image" src="https://github.com/user-attachments/assets/29a9e8b2-8b38-4e09-bca3-c37f8911eb7e" />
+<img width="1413" height="834" alt="image" src="https://github.com/user-attachments/assets/f6e0fe7e-aa8b-4d8b-a521-b1c1e6363ae8" />
 
 
 ## Stack
