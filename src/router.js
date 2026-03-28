@@ -57,6 +57,9 @@ function stripOpenClawNoise(text) {
     if (/^Warning:\s/.test(trimmed)) continue;
     if (/^Use `?node --trace-warnings`?/i.test(trimmed)) continue;
     if (/OPENCLAW_PLUGIN_SDK_COMPAT_DEPRECATED/.test(trimmed)) continue;
+    if (/^Bundled plugins must use scoped plugin-sdk subpaths\./i.test(trimmed)) continue;
+    if (/^External plugins may keep compat temporarily while migrating\./i.test(trimmed)) continue;
+    if (/^Migration guide:\s*https:\/\/docs\.openclaw\.ai\/plugins\/sdk-migration/i.test(trimmed)) continue;
     filtered.push(line);
   }
 
@@ -241,6 +244,21 @@ function summarizeProjectMemory(projectMemory = {}) {
   return sections.join('\n\n');
 }
 
+function summarizeProjectConfiguration(project = {}) {
+  const settings = project?.settings_json || {};
+  const codeFolder = `${settings.code_folder || settings.imported_from || project?.workspace_dir || ''}`.trim();
+  const subfolders = Array.isArray(settings.subfolders) ? settings.subfolders : [];
+  const ignoreFolders = Array.isArray(settings.ignore_folders) ? settings.ignore_folders : [];
+  const instructions = `${settings.getting_started || settings.instructions || ''}`.trim();
+  const lines = [
+    `Main code folder: ${codeFolder || '(not set)'}`,
+    `Subfolders: ${subfolders.length ? subfolders.join(', ') : '(all files under the code folder)'}`,
+    `Ignored folders: ${ignoreFolders.length ? ignoreFolders.join(', ') : '(none)'}`,
+  ];
+  if (instructions) lines.push(`Instructions: ${instructions}`);
+  return lines.join('\n');
+}
+
 function buildCodexPrompt({ project, envelope, planning, config = {} }) {
   const payloadText = envelope.payload?.text || envelope.payload?.prompt || envelope.payload?.task || '';
   const payloadJson = JSON.stringify(envelope.payload || {}, null, 2);
@@ -258,6 +276,7 @@ function buildCodexPrompt({ project, envelope, planning, config = {} }) {
       `Active workflows: ${(project?.workflows || []).map(w => `${w.name} (${w.state})`).join(', ') || '(none)'}`,
       `Active sessions: ${(project?.sessions || []).map(s => `${s.title} (${s.state})`).join(', ') || '(none)'}`,
     ].join('\n')),
+    stringifyPromptSection('Project configuration', summarizeProjectConfiguration(project)),
     planning?.objective ? stringifyPromptSection('Objective', planning.objective) : '',
     planning?.now?.length ? stringifyPromptSection('Now', summarizePlanningList(planning.now, 3)) : '',
     planning?.next?.length ? stringifyPromptSection('Next', summarizePlanningList(planning.next, 2)) : '',
@@ -291,10 +310,7 @@ function buildOpenClawPrompt({ agent, envelope, project, projectState, planning,
     planning.playbook.reliabilityReview ? `### Reliability review\n${planning.playbook.reliabilityReview.trim()}` : '',
   ].filter(Boolean).join('\n\n') : '';
   const promptSections = [
-    'You are OpenClaw running locally for the current project only.',
-    'Do not use roadmap or planning state from unrelated projects.',
-    'Treat the project database as long-term memory for this project.',
-    'Respond concisely and directly to the user request.',
+    'Read OPENCLAW_BOOTSTRAP.md in the repository root before responding.',
     '',
     stringifyPromptSection('Agent', [
       `Name: ${agent?.name || 'OpenClaw'}`,
@@ -310,6 +326,7 @@ function buildOpenClawPrompt({ agent, envelope, project, projectState, planning,
       `Workflows: ${activeWorkflows || '(none)'}`,
       `Sessions: ${activeSessions || '(none)'}`,
     ].join('\n')),
+    stringifyPromptSection('Project configuration', summarizeProjectConfiguration(project)),
     stringifyPromptSection('User request', payloadText || '(no text provided)'),
     stringifyPromptSection('Project agent', [
       `Session id: ${envelope.agent_session_id || projectState?.openclaw_session_id || '(new)'}`,

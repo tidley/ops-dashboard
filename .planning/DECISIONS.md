@@ -12,3 +12,6 @@
 - Keep the browser sign-in paths flexible: NIP-07, Amber / Nostr Connect, and `nsec`.
 - Keep the legacy HTTP bootstrap / signalling routes as compatibility and debugging hooks while the direct peer path matures.
 - Prefer a minimal flat dark theme with dense spacing and simple borders over gradient-heavy surfaces.
+- Use `app_settings` for global workspace defaults and keep project settings as project-scoped overrides.
+- Keep `Project Settings` in the project header and expose `Global Settings` as a separate top-level screen.
+- Keep `OpenClaw Main` as a separate hidden namespace from project conversations.

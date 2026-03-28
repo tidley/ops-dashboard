@@ -5,13 +5,77 @@ const vm = require('vm');
 
 function createNode(tagName) {
   const listeners = {};
-  return {
+  const classTokens = new Set();
+  function matchesSelector(node, selector) {
+    const value = String(selector || '').trim();
+    if (!value) return false;
+    if (value.startsWith('[') && value.endsWith(']')) {
+      const attr = value.slice(1, -1).split('=')[0].trim();
+      return Object.prototype.hasOwnProperty.call(node.attributes || {}, attr);
+    }
+    if (value.startsWith('.')) {
+      const className = value.slice(1);
+      return String(node.className || '').split(/\s+/).includes(className);
+    }
+    return String(node.tagName || '').toLowerCase() === value.toLowerCase();
+  }
+
+  function walk(node, selector, all, results) {
+    if (matchesSelector(node, selector)) {
+      if (!all) return node;
+      results.push(node);
+    }
+    for (const child of node.children || []) {
+      const found = walk(child, selector, all, results);
+      if (found && !all) return found;
+    }
+    return all ? results : null;
+  }
+
+  const node = {
     tagName: String(tagName || '').toUpperCase(),
     className: '',
     textContent: '',
     children: [],
     attributes: {},
+    parentNode: null,
     open: false,
+    style: {},
+    classList: {
+      add(token) {
+        if (!token) return;
+        classTokens.add(token);
+        node.className = Array.from(classTokens).join(' ');
+      },
+      remove(token) {
+        if (!token) return;
+        classTokens.delete(token);
+        node.className = Array.from(classTokens).join(' ');
+      },
+      contains(token) {
+        return classTokens.has(token);
+      },
+      toggle(token, force) {
+        if (force === true) {
+          classTokens.add(token);
+          node.className = Array.from(classTokens).join(' ');
+          return true;
+        }
+        if (force === false) {
+          classTokens.delete(token);
+          node.className = Array.from(classTokens).join(' ');
+          return false;
+        }
+        if (classTokens.has(token)) {
+          classTokens.delete(token);
+          node.className = Array.from(classTokens).join(' ');
+          return false;
+        }
+        classTokens.add(token);
+        node.className = Array.from(classTokens).join(' ');
+        return true;
+      },
+    },
     addEventListener(type, handler) {
       listeners[type] = listeners[type] || [];
       listeners[type].push(handler);
@@ -22,22 +86,44 @@ function createNode(tagName) {
       return true;
     },
     appendChild(child) {
+      if (child && typeof child === 'object') {
+        child.parentNode = this;
+      }
       this.children.push(child);
       return child;
     },
+    closest(selector) {
+      if (!selector) return null;
+      var current = this;
+      while (current) {
+        if (selector === '[data-recent-file-item]' && current.attributes && current.attributes['data-recent-file-item'] !== undefined) {
+          return current;
+        }
+        current = current.parentNode || null;
+      }
+      return null;
+    },
     setAttribute(name, value) {
-      this.attributes[name] = String(value);
+      const key = String(name);
+      const text = String(value);
+      this.attributes[key] = text;
+      if (key === 'class') {
+        this.className = text;
+        classTokens.clear();
+        text.split(/\s+/).filter(Boolean).forEach((token) => classTokens.add(token));
+      }
     },
     getAttribute(name) {
       return this.attributes[name] || '';
     },
     querySelector() {
-      return null;
+      return walk(this, arguments[0], false, []);
     },
     querySelectorAll() {
-      return [];
+      return walk(this, arguments[0], true, []);
     },
   };
+  return node;
 }
 
 function createHarness() {
@@ -152,6 +238,10 @@ describe('project message render', function() {
     assert.ok(details, 'expected a collapsed details section');
     assert.equal(summary.textContent, 'show more');
     assert.equal(full.textContent, longText);
+
+    details.open = true;
+    details.dispatchEvent({ type: 'toggle' });
+    assert.equal(summary.textContent, 'show less');
   });
 
   it('keeps error text collapsed under the bubble', function() {
@@ -216,5 +306,70 @@ describe('project message render', function() {
     api.scrollThreadToBottom();
 
     assert.equal(thread.scrollTop, 1337);
+  });
+
+  it('opens and closes the recent file detail drawer', function() {
+    const harness = createHarness();
+    const root = createNode('div');
+    root.setAttribute('data-recent-files-root', 'true');
+    const item = createNode('div');
+    item.setAttribute('data-recent-file-item', 'true');
+    item.setAttribute('data-status-label', 'Modified');
+    item.setAttribute('data-file-name', 'app.js');
+    item.setAttribute('data-file-path', 'src/app.js');
+    item.setAttribute('data-file-updated-label', 'Mar 27, 2026, 17:12');
+    item.setAttribute('data-file-updated-relative', '1m ago');
+    item.setAttribute('data-file-summary', '+12 -3');
+    const button = createNode('button');
+    button.setAttribute('data-recent-file-trigger', 'true');
+    button.setAttribute('aria-expanded', 'false');
+    const detailPanel = createNode('div');
+    detailPanel.setAttribute('class', 'recent-file-item__detail-panel');
+    const detailPath = createNode('code');
+    detailPath.setAttribute('class', 'recent-file-item__detail-path');
+    detailPath.textContent = 'src/app.js';
+    detailPanel.appendChild(detailPath);
+    const detail = createNode('div');
+    detail.setAttribute('data-recent-file-detail', 'true');
+    detail.scrollHeight = 160;
+    detail.appendChild(detailPanel);
+    item.appendChild(button);
+    item.appendChild(detail);
+    root.appendChild(item);
+    harness.document.body.appendChild(root);
+    harness.document.querySelector = function(selector) {
+      if (selector === '[data-recent-files-root]') return root;
+      if (selector === '[data-recent-file-detail]') return detail;
+      return null;
+    };
+    harness.document.querySelectorAll = function(selector) {
+      if (selector === '[data-recent-file-item]') return [item];
+      return [];
+    };
+
+    const script = fs.readFileSync(path.join(__dirname, '..', 'src/public/project-page.js'), 'utf8');
+    const context = vm.createContext({
+      ...harness.window,
+    });
+    context.window = context;
+    context.document = harness.document;
+    context.history = harness.window.history;
+    context.location = harness.window.location;
+    context.addEventListener = harness.window.addEventListener;
+    context.removeEventListener = harness.window.removeEventListener;
+    vm.runInContext(script, context, { filename: 'project-page.js' });
+
+    const api = context.OpsDashboardProjectPage;
+    api.openRecentFileDetail(button);
+
+    assert.equal(item.classList.contains('is-selected'), true);
+    assert.equal(button.getAttribute('aria-expanded'), 'true');
+    assert.equal(detail.classList.contains('is-open'), true);
+    assert.ok(findByClass(detail, 'recent-file-item__detail-panel'), 'expected a populated detail panel');
+    assert.equal(findByClass(detail, 'recent-file-item__detail-path').textContent, 'src/app.js');
+
+    api.closeRecentFileDetail();
+    assert.equal(item.classList.contains('is-selected'), false);
+    assert.equal(detail.classList.contains('is-open'), false);
   });
 });

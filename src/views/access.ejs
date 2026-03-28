@@ -1,122 +1,266 @@
 <!DOCTYPE html>
 <html>
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Ops Dashboard Access</title>
-  <link rel="icon" href="/public/od-icon.svg" />
-  <link rel="manifest" href="/public/manifest.webmanifest" />
-  <meta name="theme-color" content="#0f1115" />
-  <meta name="mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <link rel="stylesheet" href="/public/style.css" />
-</head>
-<body class="access-page">
-  <main class="access-shell">
-    <article class="card access-card">
-      <div class="access-brand">
-        <div class="access-brand__mark" aria-hidden="true">
-          <span class="access-brand__dot"></span>
-        </div>
-        <h1>OpenClaw</h1>
-        <p>Gateway Dashboard</p>
-      </div>
-
-      <div class="access-section">
-        <div class="auth-tabs" role="tablist" aria-label="Sign in methods">
-          <button id="nip07_tab" class="btn btn-tab" type="button" role="tab" aria-selected="true" aria-controls="nip07_panel">NIP-07</button>
-          <button id="amber_tab" class="btn btn-tab" type="button" role="tab" aria-selected="false" aria-controls="amber_panel">Amber / Nostr Connect</button>
-          <button id="nsec_tab" class="btn btn-tab" type="button" role="tab" aria-selected="false" aria-controls="nsec_panel">nsec</button>
-        </div>
-        <div class="field__hint">Use the signer that matches the device you have in front of you.</div>
-
-        <section id="nip07_panel" class="auth-panel" role="tabpanel" aria-labelledby="nip07_tab">
-          <div class="field">
-            <div class="field__hint">Use the browser signer already available on this device.</div>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>vibez Access</title>
+    <link rel="icon" href="/public/od-icon.svg" />
+    <link rel="manifest" href="/public/manifest.webmanifest" />
+    <meta name="theme-color" content="#0f1115" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <link rel="stylesheet" href="/public/style.css" />
+  </head>
+  <body class="access-page">
+    <main class="access-shell">
+      <article class="card access-card">
+        <div class="access-brand">
+          <div class="access-brand__mark" aria-hidden="true">
+            <svg class="access-brand__logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="Operations logo">
+              <defs>
+                <linearGradient id="accessBg" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#0a0d19" />
+                  <stop offset="100%" stop-color="#12162a" />
+                </linearGradient>
+                <linearGradient id="accessCyanBlue" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#6df3ff" />
+                  <stop offset="100%" stop-color="#4ea3ff" />
+                </linearGradient>
+                <linearGradient id="accessBluePurple" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#8ca6ff" />
+                  <stop offset="100%" stop-color="#b864ff" />
+                </linearGradient>
+                <linearGradient id="accessSoftWhite" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#f5f8ff" />
+                  <stop offset="100%" stop-color="#c4cafb" />
+                </linearGradient>
+                <radialGradient id="accessCenter" cx="38%" cy="35%" r="72%">
+                  <stop offset="0%" stop-color="#7ff2f0" />
+                  <stop offset="55%" stop-color="#59c6ff" />
+                  <stop offset="100%" stop-color="#2c74ff" />
+                </radialGradient>
+              </defs>
+              <rect width="1024" height="1024" rx="180" fill="url(#accessBg)" />
+              <g fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="42">
+                <path d="M280 360 L492 232 Q512 220 532 232 L744 360" stroke="url(#accessCyanBlue)" />
+                <path d="M280 384 L280 618 Q280 650 306 666 L486 774" stroke="url(#accessCyanBlue)" />
+                <path d="M744 384 L744 618 Q744 650 718 666 L538 774" stroke="url(#accessBluePurple)" />
+                <path d="M300 420 L420 492" stroke="url(#accessCyanBlue)" />
+                <path d="M724 420 L604 492" stroke="url(#accessBluePurple)" />
+                <path d="M512 744 L512 604" stroke="url(#accessBluePurple)" />
+              </g>
+              <g class="access-brand__nodes">
+                <circle class="access-brand__node-glow access-brand__node-glow--tl" cx="280" cy="360" r="72" fill="url(#accessCyanBlue)" />
+                <circle class="access-brand__node-glow access-brand__node-glow--tr" cx="744" cy="360" r="72" fill="url(#accessSoftWhite)" />
+                <circle class="access-brand__node-glow access-brand__node-glow--center" cx="512" cy="512" r="104" fill="url(#accessCenter)" />
+                <circle class="access-brand__node-glow access-brand__node-glow--bottom" cx="512" cy="744" r="72" fill="url(#accessSoftWhite)" />
+                <circle class="access-brand__node access-brand__node--tl" cx="280" cy="360" r="54" fill="url(#accessCyanBlue)" />
+                <circle class="access-brand__node access-brand__node--tr" cx="744" cy="360" r="54" fill="url(#accessSoftWhite)" />
+                <circle class="access-brand__node access-brand__node--center" cx="512" cy="512" r="84" fill="url(#accessCenter)" />
+                <circle class="access-brand__node access-brand__node--bottom" cx="512" cy="744" r="54" fill="url(#accessSoftWhite)" />
+              </g>
+            </svg>
           </div>
-          <div class="actions">
-            <button id="nip07_login_btn" class="btn btn-primary btn-block" type="button">Log in with NIP-07</button>
-          </div>
-        </section>
-
-        <section id="amber_panel" class="auth-panel" role="tabpanel" aria-labelledby="amber_tab" hidden>
-          <div class="field">
-            <label for="amber_relays">Relay(s)</label>
-            <input id="amber_relays" type="text" value="<%= defaultRelayUrls %>" placeholder="wss://relay.damus.io, wss://relay.primal.net, wss://relay.nostr.band" />
-          </div>
-          <div class="actions">
-            <button id="amber_login_btn" class="btn btn-primary btn-block" type="button">Log in with Amber</button>
-          </div>
-        </section>
-
-        <section id="nsec_panel" class="auth-panel" role="tabpanel" aria-labelledby="nsec_tab" hidden>
-          <div class="field">
-            <label for="nsec_value">nsec</label>
-            <textarea id="nsec_value" rows="2" spellcheck="false" placeholder="Paste an nsec here for local signing"></textarea>
-          </div>
-          <div class="actions">
-            <button id="nsec_login_btn" class="btn btn-primary btn-block" type="button">Log in with nsec</button>
-          </div>
-        </section>
-
-        <div id="session_stage" class="access-stage" hidden>
-          <div class="actions access-actions">
-            <button id="fetch_btn" class="btn btn-primary btn-block" disabled>Fetch dashboard /</button>
-            <button id="connect_btn" class="btn" disabled hidden>Connect WebRTC</button>
-          </div>
+          <h1>vibez</h1>
         </div>
 
-        <div id="preview" class="access-status">Waiting for sign in…</div>
+        <div class="access-section">
+          <div
+            class="auth-tabs auth-tabs--outer"
+            role="tablist"
+            aria-label="Sign in methods"
+          >
+            <button
+              id="signer_tab"
+              class="btn btn-tab"
+              type="button"
+              role="tab"
+              aria-selected="true"
+              aria-controls="signer_panel"
+            >
+              Signer
+            </button>
+            <button
+              id="nsec_tab"
+              class="btn btn-tab"
+              type="button"
+              role="tab"
+              aria-selected="false"
+              aria-controls="nsec_panel"
+            >
+              nsec
+            </button>
+          </div>
 
-        <div id="session_meta" class="mono-block" hidden>
-          <div><span>Session</span><code id="session_id">(none)</code></div>
-          <div><span>Signal URL</span><code id="signal_url">(none)</code></div>
-          <div><span>Proxy URL</span><code id="proxy_url">(none)</code></div>
+          <section
+            id="signer_panel"
+            class="auth-panel auth-panel--flat"
+            role="tabpanel"
+            aria-labelledby="signer_tab"
+          >
+            <div id="auth_prompt" class="auth-mode-label">Select signer</div>
+            <div
+              class="auth-tabs auth-tabs--inner"
+              role="tablist"
+              aria-label="Signer options"
+            >
+              <button
+                id="nip07_tab"
+                class="btn btn-tab"
+                type="button"
+                role="tab"
+                aria-selected="true"
+                aria-controls="nip07_panel"
+              >
+                NIP-07
+              </button>
+              <button
+                id="amber_tab"
+                class="btn btn-tab"
+                type="button"
+                role="tab"
+                aria-selected="false"
+                aria-controls="amber_panel"
+              >
+                Amber
+              </button>
+            </div>
+          </section>
+
+          <section
+            id="nip07_panel"
+            class="auth-method-panel"
+            role="tabpanel"
+            aria-labelledby="nip07_tab"
+          >
+            <div class="actions">
+              <button
+                id="nip07_login_btn"
+                class="btn btn-primary btn-block"
+                type="button"
+              >
+                Log in with NIP-07
+              </button>
+            </div>
+          </section>
+
+          <section
+            id="amber_panel"
+            class="auth-method-panel"
+            role="tabpanel"
+            aria-labelledby="amber_tab"
+            hidden
+          >
+            <div class="actions">
+              <button
+                id="amber_login_btn"
+                class="btn btn-primary btn-block"
+                type="button"
+              >
+                Log in with Amber
+              </button>
+            </div>
+          </section>
+
+          <section
+            id="nsec_panel"
+            class="auth-panel"
+            role="tabpanel"
+            aria-labelledby="nsec_tab"
+            hidden
+          >
+            <div class="field">
+              <!-- <label for="nsec_value">Private key (nsec)</label> -->
+              <textarea
+                id="nsec_value"
+                rows="2"
+                spellcheck="false"
+                placeholder="Paste an nsec here for local signing"
+              ></textarea>
+            </div>
+            <div class="actions">
+              <button
+                id="nsec_login_btn"
+                class="btn btn-primary btn-block"
+                type="button"
+              >
+                Log in with nsec
+              </button>
+            </div>
+          </section>
+
+          <div id="session_stage" class="access-stage" hidden>
+            <div class="actions access-actions">
+              <button id="fetch_btn" class="btn btn-primary btn-block" disabled>
+                Fetch dashboard /
+              </button>
+              <button id="connect_btn" class="btn" disabled hidden>
+                Connect WebRTC
+              </button>
+            </div>
+          </div>
+
+          <div class="access-startup">
+            <div class="access-startup__label">Startup</div>
+            <div class="access-startup-list" aria-label="Startup steps">
+              <div id="startup_step_prepare" class="access-startup-step">
+                <span class="access-startup-step__lane">[client]</span>
+                <span class="access-startup-step__text">Preparing session</span>
+              </div>
+              <div id="startup_step_sign" class="access-startup-step">
+                <span class="access-startup-step__lane">[client]</span>
+                <span class="access-startup-step__text">Signing bootstrap request</span>
+              </div>
+              <div id="startup_step_publish" class="access-startup-step">
+                <span class="access-startup-step__lane">[client]</span>
+                <span class="access-startup-step__text">Publishing via Nostr</span>
+              </div>
+              <div id="startup_step_verify" class="access-startup-step">
+                <span class="access-startup-step__lane">[server]</span>
+                <span class="access-startup-step__text">Verifying request</span>
+              </div>
+              <div id="startup_step_issue" class="access-startup-step">
+                <span class="access-startup-step__lane">[server]</span>
+                <span class="access-startup-step__text">Issuing session</span>
+              </div>
+              <div id="startup_step_cookie" class="access-startup-step">
+                <span class="access-startup-step__lane">[client]</span>
+                <span class="access-startup-step__text">Confirming session cookie</span>
+              </div>
+              <div id="startup_step_connect" class="access-startup-step">
+                <span class="access-startup-step__lane">[client]</span>
+                <span class="access-startup-step__text">Connecting WebRTC</span>
+              </div>
+              <div id="startup_step_session" class="access-startup-step">
+                <span class="access-startup-step__lane">[client]</span>
+                <span class="access-startup-step__text">Opening authenticated dashboard</span>
+              </div>
+            </div>
+          </div>
+
+          <div id="session_meta" class="mono-block" hidden>
+            <div><span>Session</span><code id="session_id">(none)</code></div>
+            <div>
+              <span>Signal URL</span><code id="signal_url">(none)</code>
+            </div>
+            <div><span>Proxy URL</span><code id="proxy_url">(none)</code></div>
+          </div>
         </div>
+      </article>
+    </main>
 
-        <details class="access-advanced">
-          <summary>Advanced</summary>
-
-          <div class="actions">
-            <button id="bootstrap_btn" class="btn btn-primary btn-block" type="button">Connect</button>
-          </div>
-
-          <div class="field">
-            <label for="amber_uri">Amber connection URI</label>
-            <textarea id="amber_uri" rows="3" spellcheck="false" readonly placeholder="A nostrconnect:// URI will appear here"></textarea>
-            <div class="field__hint">Amber should open automatically after you tap the button. If it does not, copy the URI into Amber manually.</div>
-          </div>
-
-          <div class="field">
-            <label for="event_json">Wrapped event JSON</label>
-            <textarea id="event_json" rows="10" spellcheck="false" placeholder="Generated wrapped event will appear here"></textarea>
-          </div>
-        </details>
-
-        <section class="access-help">
-          <h2>How to connect</h2>
-          <ol>
-            <li>Choose a signing method and approve the request.</li>
-            <li>Wait for the access session to be issued.</li>
-            <li>Use <strong>Fetch dashboard /</strong> to land on the dashboard.</li>
-          </ol>
-        </section>
-      </div>
-    </article>
-  </main>
-
-  <script>
-    window.ACCESS_GATEWAY = {
-      app: '<%= accessApp %>',
-      gatewayPubkey: '<%= gatewayIdentity.pubkey %>',
-      gatewayNpub: '<%= gatewayIdentity.npub %>',
-      relayUrls: '<%= defaultRelayUrls %>',
-    };
-    window.FIPS_STUN_URL = '<%= stunUrl %>';
-  </script>
-  <script src="/public/vendor/nostr.bundle.js" defer></script>
-  <script src="/public/webrtc-proxy.js" defer></script>
-  <script src="/public/access-page.js" defer></script>
-  <script src="/public/pwa-register.js" defer></script>
-</body>
+    <script>
+      window.ACCESS_GATEWAY = {
+        app: '<%= accessApp %>',
+        gatewayPubkey: '<%= gatewayIdentity.pubkey %>',
+        gatewayNpub: '<%= gatewayIdentity.npub %>',
+        relayUrls: '<%= defaultRelayUrls %>',
+      };
+      window.FIPS_STUN_URL = '<%= stunUrl %>';
+    </script>
+    <script src="/public/vendor/nostr.bundle.js" defer></script>
+    <script src="/public/webrtc-proxy.js" defer></script>
+    <script src="/public/access-page.js" defer></script>
+    <script src="/public/pwa-register.js" defer></script>
+  </body>
 </html>

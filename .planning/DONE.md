@@ -23,3 +23,6 @@
 - Added e2e coverage for access-page bootstrap and relay access signalling.
 - Reworked the dashboard theme to a minimal flat dark style.
 - Added mobile drawers for project navigation on home and project pages.
+- Split workspace settings into Global Settings plus simplified Project Settings.
+- Added a global settings page and wizard for workspace defaults.
+- Added the home-page OpenClaw control island.

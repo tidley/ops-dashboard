@@ -77,7 +77,7 @@ describe('message input', function() {
 
     assert.equal(result.statusCode, 302);
     assert.equal(result.kind, 'redirect');
-    assert.match(result.location || '', new RegExp(`^/project/${project.id}\\?session=ses-`));
+    assert.match(result.location || '', new RegExp(`^/project/${project.id}\\?(?:tab=conversations&)?session=ses-`));
   });
 
   it('surfaces a readable error when OpenClaw is unavailable', async function() {
@@ -118,7 +118,6 @@ printf '%s' '{"reply":"delayed reply"}'
         body: {
           text: 'Persist me immediately',
           message_type: 'prompt',
-          agent_id: 'agent-openclaw-main',
         },
         acceptHeader: 'application/json',
       });

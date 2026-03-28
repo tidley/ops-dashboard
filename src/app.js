@@ -1,11 +1,28 @@
 const express = require('express');
+const fs = require('fs');
 const path = require('path');
+const { execSync } = require('child_process');
 const cookieParser = require('cookie-parser');
 const { initDb, db } = require('./db');
 const store = require('./store');
 const { buildProjectGroups } = require('./sidebar');
 const { routeToAgent, routeToCodex } = require('./router');
 const { loadPlanningContext } = require('./planning');
+const {
+  collectOpenClawControlPanel,
+  normalizeList: normalizeOpenClawList,
+  refreshOpenClawControlPanel,
+  restartOpenClawGateway,
+  setOpenClawDefaultModel,
+  setOpenClawFallbackModels,
+} = require('./openclaw-control');
+const {
+  buildGlobalSettingsWizard,
+  buildProjectSettingsWizard,
+  getProjectFolderSettings,
+  normalizeFolderListField,
+  shouldIncludeRecentFile,
+} = require('./project-settings');
 const {
   resolveBackendBaseUrl,
   resolveListenHost,
@@ -75,6 +92,10 @@ function normalizeProjectTab(value) {
   return PROJECT_TABS.includes(tab) ? tab : 'overview';
 }
 
+function getGlobalWorkspaceSettings() {
+  return store.getAppSetting('global_workspace_settings', {});
+}
+
 function formatRelativeTime(iso) {
   if (!iso) return 'No activity yet';
   const time = new Date(iso).getTime();
@@ -108,6 +129,20 @@ function decorateProject(project) {
     sectionLabel: project.section === 'pave' ? 'Pave' : project.section === 'sec06' ? 'sec06' : 'General',
     activityLabel: formatRelativeTime(project.last_activity || project.created_at),
     hasActivity: Boolean(project.last_activity),
+  };
+}
+
+function serializeSidebarProject(project) {
+  return {
+    id: project.id,
+    name: project.name,
+    status: project.status,
+    sectionLabel: project.sectionLabel,
+    activityLabel: project.activityLabel,
+    session_count: project.session_count,
+    workflow_count: project.workflow_count,
+    favorite: Boolean(project.favorite),
+    archived: Boolean(project.archived),
   };
 }
 
@@ -214,14 +249,53 @@ function buildHourLabels() {
   return Array.from({ length: 24 }, (_, hour) => `${String(hour).padStart(2, '0')}:00`);
 }
 
-function clampHourSeriesToNow(series, labels, now = new Date()) {
-  const currentHour = now.getUTCHours();
-  if (!Array.isArray(series) || !series.length) return { series: [], labels: [] };
-  const upperBound = Math.min(series.length, currentHour + 1);
-  return {
-    series: series.slice(0, upperBound),
-    labels: Array.isArray(labels) ? labels.slice(0, upperBound) : [],
-  };
+function bucketHourKey(date) {
+  const hour = new Date(Date.UTC(
+    date.getUTCFullYear(),
+    date.getUTCMonth(),
+    date.getUTCDate(),
+    date.getUTCHours(),
+  ));
+  return hour.toISOString();
+}
+
+function formatHourBucketLabel(date) {
+  return date.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    timeZone: 'UTC',
+  });
+}
+
+function buildRollingHourWindow(count = 24, endDate = new Date()) {
+  const endHour = new Date(Date.UTC(
+    endDate.getUTCFullYear(),
+    endDate.getUTCMonth(),
+    endDate.getUTCDate(),
+    endDate.getUTCHours(),
+    0,
+    0,
+    0,
+  ));
+  endHour.setUTCHours(endHour.getUTCHours() - 1);
+
+  const startHour = new Date(endHour);
+  startHour.setUTCHours(startHour.getUTCHours() - (count - 1));
+
+  const keys = [];
+  const labels = [];
+
+  for (let idx = 0; idx < count; idx += 1) {
+    const hour = new Date(startHour);
+    hour.setUTCHours(startHour.getUTCHours() + idx);
+    keys.push(bucketHourKey(hour));
+    labels.push(formatHourBucketLabel(hour));
+  }
+
+  return { keys, labels, startHour, endHour };
 }
 
 function buildDashboardUsageStats(projects) {
@@ -231,7 +305,9 @@ function buildDashboardUsageStats(projects) {
   const monthKeys = buildDateKeys(30, startOfToday);
   const dayIndex = new Map(dayKeys.map((key, idx) => [key, idx]));
   const monthIndex = new Map(monthKeys.map((key, idx) => [key, idx]));
-  const hourLabels = buildHourLabels();
+  const hourWindow = buildRollingHourWindow(24, today);
+  const hourIndex = new Map(hourWindow.keys.map((key, idx) => [key, idx]));
+  const hourLabels = hourWindow.labels;
   const dayLabels = dayKeys.map(formatBucketLabel);
   const monthLabels = monthKeys.map(formatBucketLabel);
 
@@ -278,15 +354,16 @@ function buildDashboardUsageStats(projects) {
         aggregate30dSeries[monthIdx] += total;
       }
 
+      const hourIdx = hourIndex.get(bucketHourKey(time));
+      if (hourIdx != null) {
+        series24h[hourIdx] += total;
+        aggregate24hSeries[hourIdx] += total;
+      }
+
       if (dayKey === dayKeys[6]) {
-        const hour = time.getUTCHours();
-        series24h[hour] += total;
-        aggregate24hSeries[hour] += total;
         todayTotal += total;
       }
     }
-
-    const clamped24h = clampHourSeriesToNow(series24h, hourLabels, today);
 
     projectSummaries.push({
       id: project.id,
@@ -294,20 +371,18 @@ function buildDashboardUsageStats(projects) {
       weeklyTotal,
       monthlyTotal,
       todayTotal,
-      series24h: clamped24h.series,
+      series24h,
       series7d,
       series30d,
       dailySeries: series7d,
-      hourlySeries: clamped24h.series,
+      hourlySeries: series24h,
       monthlySeries: series30d,
-      labels24h: clamped24h.labels,
+      labels24h: hourLabels,
       labels7d: dayLabels,
       labels30d: monthLabels,
       lastUsageAt,
     });
   }
-
-  const aggregate24hClamped = clampHourSeriesToNow(aggregate24hSeries, hourLabels, today);
 
   projectSummaries.sort((a, b) => {
     if (b.weeklyTotal !== a.weeklyTotal) return b.weeklyTotal - a.weeklyTotal;
@@ -321,14 +396,14 @@ function buildDashboardUsageStats(projects) {
     hourLabels,
     dayLabels,
     monthLabels,
-    aggregate24hSeries: aggregate24hClamped.series,
+    aggregate24hSeries,
     aggregate7dSeries,
     aggregate30dSeries,
     aggregateDailySeries: aggregate7dSeries,
-    aggregateHourlySeries: aggregate24hClamped.series,
+    aggregateHourlySeries: aggregate24hSeries,
     projectSummaries,
     aggregateWeeklyTotal: aggregate7dSeries.reduce((sum, value) => sum + value, 0),
-    aggregateTodayTotal: aggregate24hClamped.series.reduce((sum, value) => sum + value, 0),
+    aggregateTodayTotal: projectSummaries.reduce((sum, project) => sum + project.todayTotal, 0),
     aggregate30dTotal: aggregate30dSeries.reduce((sum, value) => sum + value, 0),
   };
 }
@@ -360,6 +435,11 @@ function resolveConversationProject(project, mode = 'project') {
   return project;
 }
 
+function getOpenClawMainAgent() {
+  const agents = store.listAgents();
+  return agents.find(a => a.id === 'agent-openclaw-main') || agents.find(a => a.kind === 'openclaw' && a.is_default) || null;
+}
+
 function syncProjectUiState(project, tab, sessionId) {
   if (!project) return;
   store.touchProjectState(project.id, {
@@ -369,26 +449,309 @@ function syncProjectUiState(project, tab, sessionId) {
   });
 }
 
-function resolveProjectRoot(project) {
-  return project?.settings_json?.imported_from || project?.workspace_dir || '';
+function resolveProjectRoot(project, folderSettings = null) {
+  const resolvedFolderSettings = folderSettings || getProjectFolderSettings(project);
+  const direct = resolvedFolderSettings.codeFolder || project?.workspace_dir || '';
+  if (direct) return direct;
+
+  const description = String(project?.description || '');
+  const importedFromMatch = description.match(/Imported from\s+([^\n]+)/i);
+  if (importedFromMatch && importedFromMatch[1]) {
+    return importedFromMatch[1].trim();
+  }
+
+  return '';
+}
+
+function buildRecentFileChanges(project, limit = 10, folderSettings = null) {
+  const root = resolveProjectRoot(project, folderSettings);
+  if (!root) return [];
+  const resolvedFolderSettings = folderSettings || getProjectFolderSettings(project);
+
+  const max = Math.max(1, Number(limit) || 10);
+  const items = [];
+  const seen = new Set();
+  const numstatMap = new Map();
+
+  const recordNumstatLine = (line) => {
+    const parts = String(line || '').split('\t');
+    if (parts.length < 3) return;
+    const added = parts[0] === '-' ? null : Number(parts[0]);
+    const removed = parts[1] === '-' ? null : Number(parts[1]);
+    const filePath = parts.slice(2).join('\t').trim();
+    if (!filePath) return;
+    const current = numstatMap.get(filePath) || { added: 0, removed: 0 };
+    if (Number.isFinite(added)) current.added += added;
+    if (Number.isFinite(removed)) current.removed += removed;
+    numstatMap.set(filePath, current);
+  };
+
+  try {
+    const commands = [
+      `git -C ${JSON.stringify(root)} diff --numstat --find-renames -- .`,
+      `git -C ${JSON.stringify(root)} diff --cached --numstat --find-renames -- .`,
+    ];
+    commands.forEach(command => {
+      const numstatRaw = execSync(command, {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      });
+      String(numstatRaw || '')
+        .split('\n')
+        .map(line => line.trimEnd())
+        .filter(Boolean)
+        .forEach(recordNumstatLine);
+    });
+  } catch {
+    // ignore: repo may not support diff stats
+  }
+
+  const statusLabelFor = (status) => {
+    const normalized = String(status || '').trim().toUpperCase();
+    if (normalized.includes('R')) return 'Renamed';
+    if (normalized.includes('D')) return 'Deleted';
+    if (normalized.includes('A')) return 'Added';
+    if (normalized === '??') return 'New';
+    return 'Modified';
+  };
+
+  const readUpdatedAt = (filePath) => {
+    const absPath = path.join(root, filePath);
+    try {
+      return fs.statSync(absPath).mtime.toISOString();
+    } catch {
+      // fall through to git history
+    }
+
+    try {
+      const lastCommit = execSync(`git -C ${JSON.stringify(root)} log -1 --format=%cI -- ${JSON.stringify(filePath)}`, {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }).trim();
+      return lastCommit || '';
+    } catch {
+      return '';
+    }
+  };
+
+  const readDiffPreview = (filePath, status) => {
+    const absPath = path.join(root, filePath);
+    const sections = [];
+    const diffLimit = 4000;
+
+    const runDiff = (command) => {
+      try {
+        return execSync(command, {
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'ignore'],
+        }).trim();
+      } catch (error) {
+        return `${error.stdout || ''}`.trim();
+      }
+    };
+
+    const pushSection = (label, text) => {
+      const value = `${text || ''}`.trim();
+      if (!value) return;
+      sections.push(`## ${label}\n${value}`);
+    };
+
+    const isUntracked = String(status || '').trim().toUpperCase() === '??';
+    if (isUntracked) {
+      pushSection('Untracked file', runDiff(`git -C ${JSON.stringify(root)} diff --no-index --unified=3 --no-color -- /dev/null ${JSON.stringify(absPath)}`));
+    } else {
+      pushSection('Working tree', runDiff(`git -C ${JSON.stringify(root)} diff --unified=3 --find-renames --no-color -- ${JSON.stringify(filePath)}`));
+      pushSection('Staged', runDiff(`git -C ${JSON.stringify(root)} diff --cached --unified=3 --find-renames --no-color -- ${JSON.stringify(filePath)}`));
+    }
+
+    const joined = sections.join('\n\n');
+    if (!joined) return '';
+    if (joined.length <= diffLimit) return joined;
+    return `${joined.slice(0, diffLimit).replace(/\s+$/, '')}\n\n## Truncated\nDiff preview clipped to stay readable.`;
+  };
+
+  try {
+    const statusRaw = execSync(`git -C ${JSON.stringify(root)} status --porcelain=v1 --untracked-files=all`, {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+
+    String(statusRaw || '')
+      .split('\n')
+      .map(line => line.trimEnd())
+      .filter(Boolean)
+      .forEach(line => {
+        const status = (line.slice(0, 2).trim() || '??').toUpperCase();
+        let filePath = line.slice(3).trim();
+        if (filePath.includes(' -> ')) {
+          filePath = filePath.split(' -> ').pop().trim();
+        }
+        if (!shouldIncludeRecentFile(filePath, resolvedFolderSettings)) return;
+        if (!filePath || seen.has(filePath)) return;
+        seen.add(filePath);
+        const updatedAt = readUpdatedAt(filePath);
+        const stats = numstatMap.get(filePath) || numstatMap.get(`./${filePath}`) || null;
+        const summaryParts = [];
+        if (stats && Number.isFinite(stats.added)) summaryParts.push(`+${stats.added}`);
+        if (stats && Number.isFinite(stats.removed)) summaryParts.push(`-${stats.removed}`);
+        const changeDetail = readDiffPreview(filePath, status);
+        items.push({
+          status,
+          status_label: statusLabelFor(status),
+          file_path: filePath,
+          updated_at: updatedAt,
+          change_summary: summaryParts.join(' ') || (status === '??' ? 'new file' : 'worktree change'),
+          change_detail: changeDetail,
+        });
+      });
+  } catch {
+    // ignore: not a git repo or git unavailable
+  }
+
+  return items.slice(0, max);
+}
+
+function buildLatestCommitSnapshot(project, limit = 8, folderSettings = null) {
+  const root = resolveProjectRoot(project, folderSettings);
+  if (!root) return null;
+  const resolvedFolderSettings = folderSettings || getProjectFolderSettings(project);
+  const max = Math.max(1, Number(limit) || 8);
+
+  let commitHash = '';
+  let commitShortHash = '';
+  let commitAuthor = '';
+  let commitDate = '';
+  let commitMessage = '';
+
+  try {
+    const metaRaw = execSync(`git -C ${JSON.stringify(root)} log -1 --format=%H%x09%h%x09%an%x09%cI%x09%s`, {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+    const parts = String(metaRaw || '').split('\t');
+    commitHash = parts[0] || '';
+    commitShortHash = parts[1] || '';
+    commitAuthor = parts[2] || '';
+    commitDate = parts[3] || '';
+    commitMessage = parts.slice(4).join('\t').trim();
+  } catch {
+    return null;
+  }
+
+  if (!commitHash) return null;
+
+  const statusLabelFor = (status) => {
+    const normalized = String(status || '').trim().toUpperCase();
+    if (normalized.includes('R')) return 'Renamed';
+    if (normalized.includes('D')) return 'Deleted';
+    if (normalized.includes('A')) return 'Added';
+    return 'Modified';
+  };
+
+  const readNumstat = (filePath) => {
+    try {
+      const raw = execSync(`git -C ${JSON.stringify(root)} show --numstat --find-renames --format=format: ${JSON.stringify(commitHash)} -- ${JSON.stringify(filePath)}`, {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      });
+      const lines = String(raw || '').split('\n').map(line => line.trimEnd()).filter(Boolean);
+      for (const line of lines) {
+        const parts = line.split('\t');
+        if (parts.length < 3) continue;
+        const added = parts[0] === '-' ? null : Number(parts[0]);
+        const removed = parts[1] === '-' ? null : Number(parts[1]);
+        if (Number.isFinite(added) || Number.isFinite(removed)) {
+          return {
+            added: Number.isFinite(added) ? added : 0,
+            removed: Number.isFinite(removed) ? removed : 0,
+          };
+        }
+      }
+    } catch {
+      // ignore and fall back to no stats
+    }
+    return null;
+  };
+
+  const readDiffPreview = (filePath) => {
+    try {
+      const raw = execSync(`git -C ${JSON.stringify(root)} show --unified=3 --find-renames --no-color --format=format: ${JSON.stringify(commitHash)} -- ${JSON.stringify(filePath)}`, {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }).trim();
+      if (!raw) return '';
+      if (raw.length <= 4000) return raw;
+      return `${raw.slice(0, 4000).replace(/\s+$/, '')}\n\n## Truncated\nDiff preview clipped to stay readable.`;
+    } catch (error) {
+      return `${error.stdout || ''}`.trim();
+    }
+  };
+
+  const files = [];
+  try {
+    const nameStatusRaw = execSync(`git -C ${JSON.stringify(root)} show --name-status --find-renames --format=format: ${JSON.stringify(commitHash)} --`, {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+
+    String(nameStatusRaw || '')
+      .split('\n')
+      .map(line => line.trimEnd())
+      .filter(Boolean)
+      .forEach(line => {
+        const parts = line.split('\t');
+        if (parts.length < 2) return;
+        const status = parts[0].trim();
+        const filePath = parts[parts.length - 1].trim();
+        if (!filePath || !shouldIncludeRecentFile(filePath, resolvedFolderSettings)) return;
+
+        const stats = readNumstat(filePath);
+        const summaryParts = [];
+        if (stats && Number.isFinite(stats.added)) summaryParts.push(`+${stats.added}`);
+        if (stats && Number.isFinite(stats.removed)) summaryParts.push(`-${stats.removed}`);
+
+        files.push({
+          status,
+          status_label: statusLabelFor(status),
+          file_path: filePath,
+          updated_at: commitDate,
+          change_summary: summaryParts.join(' ') || 'commit change',
+          change_detail: readDiffPreview(filePath),
+        });
+      });
+  } catch {
+    // ignore if commit details are unavailable
+  }
+
+  return {
+    hash: commitHash,
+    shortHash: commitShortHash || commitHash.slice(0, 8),
+    author: commitAuthor,
+    message: commitMessage || 'Latest commit',
+    date: commitDate,
+    files: files.slice(0, max),
+  };
 }
 
 function buildDashboardPlanning() {
   return loadPlanningContext({ includeDashboard: true, includePlaybook: true });
 }
 
-function buildProjectPlanning(project) {
+function buildProjectPlanning(project, folderSettings = null) {
   return loadPlanningContext({
-    projectRoot: resolveProjectRoot(project),
+    projectRoot: resolveProjectRoot(project, folderSettings),
     includeDashboard: false,
     includePlaybook: true,
   });
 }
 
-function buildProjectMemorySnapshot(project, activeSession, messages, logs, artifacts) {
+function buildProjectMemorySnapshot(project, activeSession, messages, logs, artifacts, folderSettings = null) {
+  const projectSettings = folderSettings || getProjectFolderSettings(project);
   return {
-    workspaceDir: resolveProjectRoot(project),
+    workspaceDir: resolveProjectRoot(project, projectSettings),
     memoryNamespace: project?.memory_namespace || '',
+    projectSettings,
+    latestCommit: buildLatestCommitSnapshot(project, 6, projectSettings),
     state: project?.ui_state || {},
     recentSessions: (project?.sessions || []).slice(0, 5).map(session => ({
       id: session.id,
@@ -422,6 +785,8 @@ function buildProjectMemorySnapshot(project, activeSession, messages, logs, arti
       file_path: artifact.file_path,
       created_at: artifact.created_at,
     })),
+    recentFileChanges: buildRecentFileChanges(project, 8),
+    latestCommit: buildLatestCommitSnapshot(project, 6),
     activeSession: activeSession || null,
   };
 }
@@ -570,7 +935,7 @@ async function processProjectMessage({ projectId, body = {}, acceptHeader = '' }
         ok: true,
         kind: 'redirect',
         statusCode: 302,
-        location: `/project/${project.id}?session=${session.id}`,
+        location: `/project/${project.id}?tab=${isMainConversation ? 'main-agent' : 'conversations'}&session=${session.id}`,
         body: bodyResponse,
         session,
         routed,
@@ -616,6 +981,7 @@ app.get('/', (req, res) => {
   const usage = buildDashboardUsageStats(projects);
   const dashboard = computeDashboardStats(projects, agents);
   const projectGroups = buildProjectGroups(projects);
+  const openclawControl = collectOpenClawControlPanel();
 
   const featuredProject = projects.find(p => p.hasActivity) || projects[0] || null;
 
@@ -627,8 +993,58 @@ app.get('/', (req, res) => {
     usage,
     planning,
     featuredProject,
+    openclawControl,
+    openclawNotice: lastStringField(req.query.openclaw_notice, ''),
+    openclawError: lastStringField(req.query.openclaw_error, ''),
     formatRelativeTime,
   });
+});
+
+app.get('/api/home/sidebar', (req, res) => {
+  const projects = store.listProjects().map(decorateProject);
+  const projectGroups = buildProjectGroups(projects);
+  const featuredProject = projects.find(p => p.hasActivity) || projects[0] || null;
+
+  res.json({
+    ok: true,
+    activeProjectId: featuredProject ? featuredProject.id : '',
+    sections: {
+      recent: projectGroups.recent.map(serializeSidebarProject),
+      general: projectGroups.general.map(serializeSidebarProject),
+      pave: projectGroups.pave.map(serializeSidebarProject),
+      sec06: projectGroups.sec06.map(serializeSidebarProject),
+      archived: projectGroups.archived.map(serializeSidebarProject),
+    },
+  });
+});
+
+app.get('/settings', (req, res) => {
+  const projects = store.listProjects().map(decorateProject);
+  const agents = store.listAgents();
+  const dashboard = computeDashboardStats(projects, agents);
+  const globalWorkspaceSettings = getGlobalWorkspaceSettings();
+  const globalSettingsWizard = buildGlobalSettingsWizard({
+    ...globalWorkspaceSettings,
+    code_folder: globalWorkspaceSettings.code_folder || globalWorkspaceSettings.codeFolder || path.resolve(__dirname, '..'),
+  });
+
+  res.render('settings', {
+    projects,
+    agents,
+    dashboard,
+    globalWorkspaceSettings,
+    globalSettingsWizard,
+    formatRelativeTime,
+  });
+});
+
+app.get('/api/openclaw/control-panel', async (req, res) => {
+  try {
+    const snapshot = await refreshOpenClawControlPanel({ force: true });
+    res.json(snapshot);
+  } catch (error) {
+    res.status(500).json({ ok: false, error: `${error?.message || error || 'openclaw control refresh failed'}` });
+  }
 });
 
 app.post('/api/access/bootstrap', (req, res) => {
@@ -693,6 +1109,7 @@ app.get('/project/:projectId', (req, res) => {
   if (!project) return res.status(404).send('Project not found');
   const activeTab = normalizeProjectTab(req.query.tab || project.ui_state?.last_tab || 'overview');
   const conversationProject = resolveConversationProject(project, activeTab === 'main-agent' ? 'main' : 'project');
+  const globalWorkspaceSettings = getGlobalWorkspaceSettings();
   const projectState = store.ensureProjectState(project.id);
   project.ui_state = projectState;
   const conversationState = store.ensureProjectState(conversationProject.id);
@@ -701,7 +1118,11 @@ app.get('/project/:projectId', (req, res) => {
   const rememberedSession = activeTab === 'main-agent'
     ? (conversationState?.last_session_id || '')
     : (project.ui_state?.last_session_id || '');
-  const activeSession = req.query.session || rememberedSession || conversationProject.sessions[0]?.id || null;
+  const requestedSession = lastStringField(req.query.session, '');
+  const requestedSessionExists = requestedSession
+    ? conversationProject.sessions.some(s => s.id === requestedSession)
+    : false;
+  const activeSession = (requestedSessionExists ? requestedSession : '') || rememberedSession || conversationProject.sessions[0]?.id || null;
   const workflowIdFromQuery = lastStringField(req.query.workflow_id, '');
   if (activeTab === 'main-agent') {
     store.touchProjectState(project.id, {
@@ -720,7 +1141,8 @@ app.get('/project/:projectId', (req, res) => {
   const logs = store.listLogs(project.id, 150);
   const artifacts = store.listArtifacts(project.id, 12);
   const agents = store.listAgents();
-  const planning = buildProjectPlanning(project);
+  const projectFolderSettings = getProjectFolderSettings(project, globalWorkspaceSettings);
+  const planning = buildProjectPlanning(project, projectFolderSettings);
   const sidebarProjects = store.listProjects().map(decorateProject);
   const projectGroups = buildProjectGroups(sidebarProjects);
   const stats = computeProjectStats(project, messages, logs, artifacts, activeSession);
@@ -728,9 +1150,18 @@ app.get('/project/:projectId', (req, res) => {
   const conversationAgent = activeTab === 'main-agent'
     ? resolveConversationAgent(conversationProject, 'main')
     : resolveConversationAgent(project, 'project');
-  const projectMemory = buildProjectMemorySnapshot(activeTab === 'main-agent' ? conversationProject : project, activeSession, messages, logs, artifacts);
+  const projectMemory = buildProjectMemorySnapshot(activeTab === 'main-agent' ? conversationProject : project, activeSession, messages, logs, artifacts, projectFolderSettings);
+  const recentFileChanges = buildRecentFileChanges(activeTab === 'main-agent' ? conversationProject : project, 10, projectFolderSettings);
+  projectMemory.recentFileChanges = recentFileChanges;
+  const projectSettingsWizard = buildProjectSettingsWizard(project, globalWorkspaceSettings);
   const codexModel = process.env.CODEX_MODEL || 'gpt-5.3-codex';
   const codexConfigured = Boolean(process.env.OPENAI_API_KEY);
+
+  // Gather OpenClaw Main agent info for sidebar
+  const mainAgent = getOpenClawMainAgent();
+  const mainProject = store.ensureOpenClawMainProject();
+  const mainStats = mainProject ? computeProjectStats(mainProject, store.listMessages(mainProject.id, 20), store.listLogs(mainProject.id, 50), store.listArtifacts(mainProject.id, 12), null) : null;
+  const mainState = mainProject ? store.ensureProjectState(mainProject.id) : null;
 
   res.render('project', {
     project,
@@ -753,7 +1184,15 @@ app.get('/project/:projectId', (req, res) => {
     formatRelativeTime,
     formatDateTime,
     projectMemory,
+    recentFileChanges,
     projectUsage,
+    projectFolderSettings,
+    projectSettingsWizard,
+    globalWorkspaceSettings,
+    mainAgent,
+    mainProject: mainProject || null,
+    mainStats: mainStats || null,
+    mainState: mainState || null,
   });
 });
 
@@ -800,6 +1239,95 @@ app.post('/api/projects/:projectId/archive', (req, res) => {
 
   const returnTo = `${req.body.return_to || ''}`.trim() || req.get('referer') || `/project/${req.params.projectId}`;
   res.redirect(returnTo);
+});
+
+app.post('/api/projects/:projectId/settings', (req, res) => {
+  const project = store.getProject(req.params.projectId);
+  if (!project) return res.status(404).send('Project not found');
+
+  const codeFolder = `${req.body.code_folder || ''}`.trim();
+  const gettingStarted = `${req.body.getting_started || req.body.instructions || ''}`.trim();
+
+  const patch = {
+    code_folder: codeFolder,
+    getting_started: gettingStarted,
+    subfolders: [],
+    ignore_folders: [],
+    wizard_completed_at: new Date().toISOString(),
+  };
+
+  if (codeFolder) {
+    patch.imported_from = codeFolder;
+  }
+
+  store.updateProjectSettings(req.params.projectId, patch);
+
+  const returnTo = `${req.body.return_to || ''}`.trim() || `/project/${req.params.projectId}?tab=settings`;
+  res.redirect(returnTo);
+});
+
+app.post('/api/settings', (req, res) => {
+  const codeFolder = `${req.body.code_folder || ''}`.trim();
+  const subfolders = normalizeFolderListField(req.body.subfolders || req.body.subfolders_raw || '');
+  const ignoreFolders = normalizeFolderListField(req.body.ignore_folders || req.body.ignore_folders_raw || '');
+  const gettingStarted = `${req.body.getting_started || req.body.instructions || ''}`.trim();
+
+  store.setAppSetting('global_workspace_settings', {
+    code_folder: codeFolder,
+    subfolders,
+    ignore_folders: ignoreFolders,
+    getting_started: gettingStarted,
+    wizard_completed_at: new Date().toISOString(),
+  });
+
+  const returnTo = `${req.body.return_to || ''}`.trim() || '/settings';
+  res.redirect(returnTo);
+});
+
+app.post('/api/openclaw/gateway/restart', (req, res) => {
+  const returnTo = `${req.body.return_to || ''}`.trim() || req.get('referer') || '/';
+  try {
+    restartOpenClawGateway();
+    const next = `${returnTo}${returnTo.includes('?') ? '&' : '?'}openclaw_notice=${encodeURIComponent('Gateway restart requested')}`;
+    return res.redirect(302, next);
+  } catch (err) {
+    const next = `${returnTo}${returnTo.includes('?') ? '&' : '?'}openclaw_error=${encodeURIComponent(String(err.message || err))}`;
+    return res.redirect(302, next);
+  }
+});
+
+app.post('/api/openclaw/models/default', (req, res) => {
+  const model = `${req.body.model || ''}`.trim();
+  const returnTo = `${req.body.return_to || ''}`.trim() || req.get('referer') || '/';
+  if (!model) {
+    const next = `${returnTo}${returnTo.includes('?') ? '&' : '?'}openclaw_error=${encodeURIComponent('Model is required')}`;
+    return res.redirect(302, next);
+  }
+
+  try {
+    setOpenClawDefaultModel(model);
+    const next = `${returnTo}${returnTo.includes('?') ? '&' : '?'}openclaw_notice=${encodeURIComponent(`Model set to ${model}`)}`;
+    return res.redirect(302, next);
+  } catch (err) {
+    const next = `${returnTo}${returnTo.includes('?') ? '&' : '?'}openclaw_error=${encodeURIComponent(String(err.message || err))}`;
+    return res.redirect(302, next);
+  }
+});
+
+app.post('/api/openclaw/models/fallbacks', (req, res) => {
+  const fallbacks = normalizeOpenClawList(req.body.fallbacks || req.body.fallback_models || '');
+  const returnTo = `${req.body.return_to || ''}`.trim() || req.get('referer') || '/';
+  try {
+    setOpenClawFallbackModels(fallbacks);
+    const note = fallbacks.length
+      ? `Backup models set to ${fallbacks.join(', ')}`
+      : 'Backup models cleared';
+    const next = `${returnTo}${returnTo.includes('?') ? '&' : '?'}openclaw_notice=${encodeURIComponent(note)}`;
+    return res.redirect(302, next);
+  } catch (err) {
+    const next = `${returnTo}${returnTo.includes('?') ? '&' : '?'}openclaw_error=${encodeURIComponent(String(err.message || err))}`;
+    return res.redirect(302, next);
+  }
 });
 
 app.post('/api/agents', (req, res) => {
@@ -975,6 +1503,7 @@ app.use((err, req, res, next) => {
 
 if (require.main === module) {
   relayAccessController.start();
+  void refreshOpenClawControlPanel().catch(() => {});
   app.listen(PORT, LISTEN_HOST, () => {
     console.log(`Ops dashboard running on http://${LISTEN_HOST}:${PORT}`);
   });
@@ -985,3 +1514,5 @@ module.exports = app;
 app.processProjectMessage = processProjectMessage;
 app.relayAccessController = relayAccessController;
 app.buildDashboardUsageStats = buildDashboardUsageStats;
+app.buildRecentFileChanges = buildRecentFileChanges;
+app.buildLatestCommitSnapshot = buildLatestCommitSnapshot;

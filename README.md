@@ -1,5 +1,7 @@
 # Ops Dashboard (MVP)
 
+Vibez is a vibe coded app for your vibe coded apps.
+
 Self-hosted multi-agent, multi-project, multi-workflow operator dashboard.
 
 <img width="585" height="536" alt="image" src="https://github.com/user-attachments/assets/e81674b2-5a86-4088-99b7-0e72709b3546" />
@@ -40,24 +42,32 @@ Self-hosted multi-agent, multi-project, multi-workflow operator dashboard.
 - Recent / favourites / archived project sidebar state persisted in SQLite
 
 ## Current status
-As of 2026-03-27 UTC, the dashboard is in a working MVP state with the following active behavior:
+As of 2026-03-28 UTC, the dashboard is still an MVP but the core operator flow is now stable:
 
 - Local dashboard runs on Express + EJS + SQLite with persisted projects, sessions, messages, workflows, logs, artifacts, and access sessions.
 - Access is locked down to authenticated sessions via NIP-17 bootstrap/signalling, with allowlisted pubkeys and session cookies.
 - Browser sign-in supports NIP-07, Amber / Nostr Connect, and optional `nsec`.
-- The access page is mobile-friendly and uses a minimal, tabbed sign-in card.
-- The conversation UI is optimized for mobile use, with the composer pinned to the bottom and conversation history persisted across reloads.
+- The access page now shows a step-by-step startup checklist and a separate client/server status flow.
+- The home sidebar is lazy-loaded below `Pinned`, with `Recent` limited to the last 48 hours.
+- Project pages use a fixed spatial layout with:
+  - left project sidebar
+  - content area
+  - right expandable recent-changes rail
 - `Conversations` is project-scoped.
 - `OpenClaw Main` is its own separate conversation namespace and does not share history with the project chat tab.
-- The dashboard has a minimal dark UI and a usage overview with line charts on the home page and project overview tabs.
+- The project rail shows expandable file diffs for recent workspace changes.
+- The dashboard has a minimal dark UI with project, usage, and control surfaces still evolving.
 - The OpenClaw CLI integration is still local-process based; set `OPENCLAW_BIN` if the binary is not on `PATH`.
+
+For a shorter operational snapshot, see [`docs/status.md`](docs/status.md).
 
 ## Run
 ```bash
 cd /home/tom/code/ops-dashboard
 npm install
 npm start
-# open http://127.0.0.1:4080
+# Clean restart with various host-specific parameters on port 1717
+pids=$(lsof -ti:1717); [ -n "$pids" ] && kill -TERM $pids; while lsof -ti:1717 >/dev/null; do sleep 0.2; done; nohup env APP_HOST=10.10.0.2 PORT=1717 BACKEND_BASE_URL=http://10.10.0.2:1717 NODE_ENV=production OPENCLAW_BIN=/home/tom/.nvm/versions/node/v24.12.0/bin/openclaw node src/app.js >/tmp/ops-dashboard.log 2>&1 &
 ```
 
 ### OpenClaw integration

@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Settings | vibez</title>
+  <link rel="icon" href="/public/od-icon.svg" />
+  <link rel="manifest" href="/public/manifest.webmanifest" />
+  <meta name="theme-color" content="#0f1115" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <link rel="stylesheet" href="/public/style.css" />
+</head>
+<body data-page="settings">
+  <% const settings = globalWorkspaceSettings || {}; %>
+  <% const codeFolder = settings.codeFolder || settings.code_folder || settings.imported_from || ''; %>
+  <% const subfolders = Array.isArray(settings.subfolders) ? settings.subfolders : []; %>
+  <% const ignoreFolders = Array.isArray(settings.ignoreFolders) ? settings.ignoreFolders : []; %>
+  <% const gettingStarted = settings.gettingStarted || settings.getting_started || settings.instructions || ''; %>
+
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand__mark"><img src="/public/od-icon.svg" alt="" /></div>
+        <div>
+          <h1><a href="/">vibez</a></h1>
+        </div>
+      </div>
+
+      <div class="sidebar-scroll">
+        <section class="sidebar-section">
+          <div class="sidebar-section__title">Navigation</div>
+          <div class="mini-list">
+            <div class="mini-list__item">
+              <strong><a href="/">Projects</a></strong>
+              <span>Back to the project dashboard</span>
+            </div>
+            <div class="mini-list__item">
+              <strong>Settings</strong>
+              <span>Workspace defaults and wizard</span>
+            </div>
+          </div>
+        </section>
+      </div>
+    </aside>
+
+    <main class="workspace">
+      <header class="topbar">
+        <div>
+          <div class="eyebrow">Settings</div>
+          <h1>Workspace defaults</h1>
+          <p>These defaults apply across projects. Project settings only override the main code folder and onboarding instructions.</p>
+        </div>
+        <div class="topbar__meta">
+          <form method="post" action="/logout" class="topbar__logout-form">
+            <button type="submit" class="btn btn-danger">Logout</button>
+          </form>
+        </div>
+      </header>
+
+      <section class="card settings-import-card">
+        <div class="card__header">
+          <div>
+            <div class="eyebrow">Import</div>
+            <h2>Back-fill the workspace</h2>
+          </div>
+        </div>
+        <form method="post" action="/api/projects/backfill" class="stack">
+          <button type="submit" class="btn btn-primary btn-block">Back-fill from /home/tom/code</button>
+          <div class="field__hint">Scan the local code folder and populate the workspace from the existing repo tree.</div>
+        </form>
+      </section>
+
+      <section class="grid grid--two">
+        <article class="card">
+          <div class="card__header">
+            <div>
+              <div class="eyebrow">Defaults</div>
+              <h2>Workspace configuration</h2>
+            </div>
+          </div>
+          <form class="settings-form" method="post" action="/api/settings">
+            <input type="hidden" name="return_to" value="/settings" />
+
+            <div class="field">
+              <label for="code_folder">Main code folder</label>
+              <input id="code_folder" name="code_folder" type="text" value="<%= codeFolder %>" placeholder="/home/tom/code" spellcheck="false" />
+              <div class="field__hint">This is the shared root folder used for workspace context and change tracking.</div>
+            </div>
+
+            <div class="field">
+              <label for="subfolders">Sub folders</label>
+              <textarea id="subfolders" name="subfolders" rows="4" spellcheck="false" placeholder="pave&#10;sec"><%= subfolders.join('\n') %></textarea>
+              <div class="field__hint">One folder per line. Leave empty to include everything under the main code folder.</div>
+            </div>
+
+            <div class="field">
+              <label for="ignore_folders">Folders to ignore</label>
+              <textarea id="ignore_folders" name="ignore_folders" rows="4" spellcheck="false" placeholder="node_modules&#10;dist&#10;build"><%= ignoreFolders.join('\n') %></textarea>
+              <div class="field__hint">One folder per line. Ignored folders are skipped in recent changes and prompts.</div>
+            </div>
+
+            <div class="field">
+              <label for="getting_started">Instructions how to get going</label>
+              <textarea id="getting_started" name="getting_started" rows="6" spellcheck="false" placeholder="Tell the agent how to get started..."><%= gettingStarted %></textarea>
+              <div class="field__hint">These instructions are included in the agent prompt for all projects using these defaults.</div>
+            </div>
+
+            <div class="actions">
+              <button class="btn btn-primary" type="submit">Save settings</button>
+            </div>
+          </form>
+        </article>
+
+        <article class="card">
+          <div class="card__header">
+            <div>
+              <div class="eyebrow">Wizard</div>
+              <h2>Setup guide</h2>
+            </div>
+          </div>
+          <div class="settings-wizard" data-settings-wizard>
+            <div class="settings-wizard__step">
+              <div class="settings-wizard__step-head">
+                <strong>1. Main code folder</strong>
+                <button id="wizard_use_code_folder_btn" class="btn btn-tab btn-tab--compact" type="button">Use current source</button>
+              </div>
+              <p>Choose the repository or workspace root the dashboard should use as the shared base.</p>
+            </div>
+
+            <div class="settings-wizard__step">
+              <div class="settings-wizard__step-head">
+                <strong>2. Sub folders</strong>
+                <button id="wizard_fill_subfolders_btn" class="btn btn-tab btn-tab--compact" type="button">Suggest folders</button>
+              </div>
+              <p>Use this for child code folders like <code>pave</code> and <code>sec</code>.</p>
+            </div>
+
+            <div class="settings-wizard__step">
+              <div class="settings-wizard__step-head">
+                <strong>3. Ignore folders</strong>
+                <button id="wizard_fill_ignores_btn" class="btn btn-tab btn-tab--compact" type="button">Fill common ignores</button>
+              </div>
+              <p>Skip build output, dependency folders, and other noise.</p>
+            </div>
+
+            <div class="settings-wizard__step">
+              <div class="settings-wizard__step-head">
+                <strong>4. Getting started</strong>
+                <button id="wizard_fill_instructions_btn" class="btn btn-tab btn-tab--compact" type="button">Starter instructions</button>
+              </div>
+              <p>Write a short prompt for how the agent should begin work in new projects.</p>
+            </div>
+
+            <div class="field__hint">Use the helper buttons to prefill the form, then save the settings.</div>
+          </div>
+        </article>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    window.GLOBAL_SETTINGS_WIZARD = <%- JSON.stringify(typeof globalSettingsWizard !== 'undefined' ? globalSettingsWizard : {}) %>;
+  </script>
+  <script src="/public/project-page.js" defer></script>
+  <script src="/public/settings-page.js" defer></script>
+  <script src="/public/pwa-register.js" defer></script>
+</body>
+</html>

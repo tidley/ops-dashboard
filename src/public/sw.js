@@ -1,6 +1,5 @@
-const CACHE_NAME = 'opsdash-v1';
+const CACHE_NAME = 'opsdash-v2';
 const CORE_ASSETS = [
-  '/',
   '/public/style.css',
   '/public/project-page.js',
   '/public/home-sidebar.js',
@@ -24,17 +23,36 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
+
+  const request = event.request;
+  const accept = request.headers.get('accept') || '';
+  const isHtml = request.mode === 'navigate' || accept.includes('text/html');
+
+  if (isHtml) {
+    event.respondWith(
+      fetch(request)
+        .then((res) => {
+          if (res && res.status === 200) {
+            const clone = res.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+          }
+          return res;
+        })
+        .catch(() => caches.match(request).then((cached) => cached || caches.match('/')))
+    );
+    return;
+  }
+
   event.respondWith(
-    caches.match(event.request).then((cached) => {
+    caches.match(request).then((cached) => {
       if (cached) return cached;
-      return fetch(event.request)
+      return fetch(request)
         .then((res) => {
           if (!res || res.status !== 200 || res.type !== 'basic') return res;
           const clone = res.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
           return res;
-        })
-        .catch(() => caches.match('/'));
+        });
     })
   );
 });
