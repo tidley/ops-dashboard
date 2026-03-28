@@ -101,12 +101,11 @@ describe('home openclaw summary', function() {
     assert.equal(/The overview keeps to fleet health and agent traffic/.test(html), false);
     assert.match(html, /openclaw-summary-card/);
     assert.match(html, /<h2>Operations<\/h2>/);
-    assert.match(html, /data-home-sidebar-lazy="true"/);
     assert.match(html, /<span class="sidebar-section__title">Pinned<\/span>\s*<span class="sidebar-section__count">\((?:1)\)<\/span>/);
     assert.match(html, /<span class="sidebar-section__title">Recent<\/span>\s*<span class="sidebar-section__count">\((?:1)\)<\/span>/);
     assert.match(html, /<span class="sidebar-section__title">Projects<\/span>\s*<span class="sidebar-section__count">\((?:0)\)<\/span>/);
-    assert.match(html, /Loading recent projects…/);
-    assert.doesNotMatch(html, /Recent Project/);
+    assert.match(html, /Recent Project/);
+    assert.doesNotMatch(html, /Loading recent projects…/);
     assert.match(html, /data-sidebar-desktop-toggle/);
     assert.match(html, /data-sidebar-scroll/);
     assert.match(html, /home-sidebar\.js/);

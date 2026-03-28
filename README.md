@@ -51,7 +51,7 @@ As of 2026-03-28 UTC, the dashboard is still an MVP but the core operator flow i
 - Access is locked down to authenticated sessions via NIP-17 bootstrap/signalling, with allowlisted pubkeys and session cookies.
 - Browser sign-in supports NIP-07, Amber / Nostr Connect, and optional `nsec`.
 - The access page now shows a step-by-step startup checklist and a separate client/server status flow.
-- The home sidebar is lazy-loaded below `Pinned`, with `Recent` limited to the last 48 hours.
+- The home sidebar renders immediately below `Pinned`, with `Recent` limited to the last 48 hours.
 - Project pages use a fixed spatial layout with:
   - left project sidebar
   - content area

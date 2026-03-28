@@ -8,7 +8,7 @@ Last updated: 2026-03-28 UTC
 - The home page uses a two-stage sidebar model:
   - `Pinned` stays visible first
   - `Recent` is limited to projects active in the last 48 hours
-  - `Projects`, `Pave`, `sec06`, and `Archived` are loaded lazily after the page paints
+  - `Projects`, `Pave`, `sec06`, and `Archived` render immediately below it
 - Project pages use a fixed spatial layout:
   - left project sidebar
   - content area
