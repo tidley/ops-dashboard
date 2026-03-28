@@ -1,19 +1,17 @@
 # Vibez (MVP)
 
 Vibez is:
-- An OpenClaw interface enabling multi-project continuation.
-- A vibe coded app for your vibe coded apps.
+- A self-hosted operator dashboard for multiple OpenClaw-driven projects.
+- A vibe-coded app for building vibe-coded apps.
 
 What it provides:
-- A self-hosted multi-agent, multi-project, multi-workflow operator dashboard.
-- Remote access to scoped agentic projects.
-- Continuation between sessions.
-- Clear separation between projects.
-- Sub-agent auto-spawned per project with specific context.
-- Local database for per project metadata and conversations.
-- Separation of project information unless instructed otherwise.
-- Access to underlying OpenClaw via chat and configuration panel.
-- Nostr access control.
+- Project-scoped chat, control, and file-change history.
+- Pinned, recent, archived, and searchable project navigation.
+- Persistent project state and conversations across sessions.
+- A separate OpenClaw Main workspace for the underlying agent/runtime.
+- OpenClaw configuration and runtime controls.
+- Usage, activity, and operational status views.
+- Nostr-based access control.
 
 <img width="580" height="741" alt="image" src="https://github.com/user-attachments/assets/3f068d95-bd95-4c10-b789-81cf75ca713b" />
 
