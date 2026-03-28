@@ -2,6 +2,8 @@
 
 Vibez is a vibe coded app for your vibe coded apps.
 
+Vibez is a vibe coded app for your vibe coded apps.
+
 Self-hosted multi-agent, multi-project, multi-workflow operator dashboard.
 <img width="572" height="654" alt="image" src="https://github.com/user-attachments/assets/05dee1ba-5823-4331-a3be-b3cb8e9fdc39" />
 
