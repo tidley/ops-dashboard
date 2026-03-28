@@ -1,10 +1,11 @@
 # Vibez (MVP)
 
 Vibez is:
-- A self-hosted multi-agent, multi-project, multi-workflow operator dashboard.
+- An OpenClaw interface enabling multi-project continuation.
 - A vibe coded app for your vibe coded apps.
 
 What it provides:
+- A self-hosted multi-agent, multi-project, multi-workflow operator dashboard.
 - Remote access to scoped agentic projects.
 - Continuation between sessions.
 - Clear separation between projects.
