@@ -17,6 +17,10 @@
   var recentFilesRequest = null;
   var recentFilesRequestToken = 0;
   var recentFilesLastSignature = '';
+  var planningFilesRequest = null;
+  var planningFilesLastSignature = '';
+  var railPlanningFilesLastSignature = '';
+  var planningFileContentRequests = new Map();
   var projectRailResizePointerId = null;
   var projectRailResizeStartX = 0;
   var projectRailResizeStartWidth = 0;
@@ -59,7 +63,27 @@
   }
 
   function getRecentFilesRoot() {
+    var rail = getProjectRailRoot();
+    if (rail && typeof rail.querySelector === 'function') {
+      var railRoot = rail.querySelector('[data-recent-files-root]');
+      if (railRoot) return railRoot;
+    }
     return document.querySelector('[data-recent-files-root]');
+  }
+
+  function getPlanningFilesRoot() {
+    return document.querySelector('[data-planning-files-root]');
+  }
+
+  function getRailPlanningFilesRoot() {
+    var rail = getProjectRailRoot();
+    if (!rail || typeof rail.querySelector !== 'function') return null;
+    return rail.querySelector('[data-rail-planning-files-root]');
+  }
+
+  function getProjectFileContentBaseUrl() {
+    var root = getRailPlanningFilesRoot();
+    return root ? String(root.getAttribute('data-project-file-content-url') || '').trim() : '';
   }
 
   function getRecentFilesControlsScope() {
@@ -84,14 +108,54 @@
     return root ? root.querySelector('[data-recent-files-list]') : null;
   }
 
+  function getPlanningFilesList() {
+    var root = getPlanningFilesRoot();
+    return root ? root.querySelector('[data-planning-files-list]') : null;
+  }
+
+  function getRailPlanningFilesList() {
+    var root = getRailPlanningFilesRoot();
+    return root ? root.querySelector('[data-rail-planning-files-list]') : null;
+  }
+
   function getRecentFilesEmptyState() {
     var root = getRecentFilesRoot();
     return root ? root.querySelector('[data-recent-files-empty]') : null;
   }
 
+  function getPlanningFilesEmptyState() {
+    var root = getPlanningFilesRoot();
+    return root ? root.querySelector('[data-planning-files-empty]') : null;
+  }
+
+  function getRailPlanningFilesEmptyState() {
+    var root = getRailPlanningFilesRoot();
+    return root ? root.querySelector('[data-rail-planning-files-empty]') : null;
+  }
+
+  function getRailPlanningFileItems() {
+    var root = getRailPlanningFilesRoot();
+    return root ? Array.prototype.slice.call(root.querySelectorAll('[data-rail-planning-file-item]')) : [];
+  }
+
   function getRecentFilesCountEl() {
     var scope = getRecentFilesControlsScope();
     return scope ? scope.querySelector('[data-recent-files-count]') : null;
+  }
+
+  function getPlanningFilesCountEl() {
+    var root = getPlanningFilesRoot();
+    return root ? root.querySelector('[data-planning-files-count]') : null;
+  }
+
+  function getProjectRailViewCountEl() {
+    var root = getProjectRailRoot();
+    return root ? root.querySelector('[data-project-rail-view-count]') : null;
+  }
+
+  function getProjectRailViewSelect() {
+    var root = getProjectRailRoot();
+    return root ? root.querySelector('[data-project-rail-view-select]') : null;
   }
 
   function getRecentFilesSortButtons() {
@@ -103,12 +167,25 @@
     return 'ops-dashboard.project-recent-files-sort:' + getProjectId();
   }
 
+  function getPlanningFilesUrl() {
+    var root = getPlanningFilesRoot() || getRailPlanningFilesRoot();
+    return root ? String(root.getAttribute('data-planning-files-url') || '').trim() : '';
+  }
+
   function getProjectRailWidthStorageKey() {
     return 'ops-dashboard.project-rail-width:' + getProjectId();
   }
 
+  function getProjectRailViewStorageKey() {
+    return 'ops-dashboard.project-rail-view:' + getProjectId();
+  }
+
   function getRecentFilesSortDefaults(key) {
     return key === 'recent' ? 'desc' : 'asc';
+  }
+
+  function normalizeProjectRailView(value) {
+    return String(value || '').trim().toLowerCase() === 'planning' ? 'planning' : 'recent';
   }
 
   function isDesktopProjectLayout() {
@@ -292,6 +369,74 @@
     return direction === 'asc' ? '↑' : '↓';
   }
 
+  function getProjectRailStoredCount(view) {
+    var root = getProjectRailRoot();
+    if (!root) return 0;
+    var attr = view === 'planning' ? 'data-project-rail-planning-count' : 'data-project-rail-recent-count';
+    var raw = Number(root.getAttribute(attr) || 0);
+    return Number.isFinite(raw) && raw >= 0 ? raw : 0;
+  }
+
+  function setProjectRailStoredCount(view, count) {
+    var root = getProjectRailRoot();
+    if (!root) return;
+    var attr = view === 'planning' ? 'data-project-rail-planning-count' : 'data-project-rail-recent-count';
+    root.setAttribute(attr, String(Number(count) || 0));
+  }
+
+  function syncProjectRailViewCount(view) {
+    var countEl = getProjectRailViewCountEl();
+    if (!countEl) return;
+    var activeView = normalizeProjectRailView(view || readProjectRailView());
+    countEl.textContent = String(getProjectRailStoredCount(activeView)) + ' items';
+  }
+
+  function readProjectRailView() {
+    var root = getProjectRailRoot();
+    var view = root ? root.getAttribute('data-project-rail-view') : '';
+    try {
+      var stored = window.localStorage.getItem(getProjectRailViewStorageKey());
+      if (stored) view = stored;
+    } catch {}
+    return normalizeProjectRailView(view);
+  }
+
+  function writeProjectRailView(view) {
+    try {
+      window.localStorage.setItem(getProjectRailViewStorageKey(), normalizeProjectRailView(view));
+    } catch {}
+  }
+
+  function setProjectRailPanels(view) {
+    var root = getProjectRailRoot();
+    if (!root) return;
+    var activeView = normalizeProjectRailView(view);
+    Array.prototype.slice.call(root.querySelectorAll('[data-project-rail-panel]')).forEach(function(panel) {
+      var panelView = normalizeProjectRailView(panel.getAttribute('data-project-rail-panel'));
+      panel.hidden = panelView !== activeView;
+    });
+  }
+
+  function setProjectRailView(view, persist) {
+    var root = getProjectRailRoot();
+    var activeView = normalizeProjectRailView(view);
+    if (!root) return activeView;
+    root.setAttribute('data-project-rail-view', activeView);
+    var select = getProjectRailViewSelect();
+    if (select) {
+      select.value = activeView;
+      select.setAttribute('aria-label', activeView === 'planning' ? 'Planning files' : 'Live changes');
+    }
+    setProjectRailPanels(activeView);
+    syncProjectRailViewCount(activeView);
+    if (persist !== false) writeProjectRailView(activeView);
+    return activeView;
+  }
+
+  function syncProjectRailView() {
+    return setProjectRailView(readProjectRailView(), false);
+  }
+
   function updateRecentFilesSortButtons(sort) {
     var activeSort = normalizeRecentFilesSortState(sort);
     getRecentFilesSortButtons().forEach(function(button) {
@@ -407,6 +552,8 @@
     if (countEl) {
       countEl.textContent = String(Number(count) || 0) + ' items';
     }
+    setProjectRailStoredCount('recent', count);
+    syncProjectRailViewCount();
   }
 
   function setRecentFilesEmpty(empty) {
@@ -414,6 +561,309 @@
     var emptyState = getRecentFilesEmptyState();
     if (list) list.hidden = Boolean(empty);
     if (emptyState) emptyState.hidden = !empty;
+  }
+
+  function setPlanningFilesCount(count) {
+    var countEl = getPlanningFilesCountEl();
+    if (countEl) countEl.textContent = String(Number(count) || 0) + ' items';
+  }
+
+  function setPlanningFilesEmpty(empty) {
+    var list = getPlanningFilesList();
+    var emptyState = getPlanningFilesEmptyState();
+    if (list) list.hidden = Boolean(empty);
+    if (emptyState) emptyState.hidden = !empty;
+  }
+
+  function setRailPlanningFilesCount(count) {
+    setProjectRailStoredCount('planning', count);
+    syncProjectRailViewCount();
+  }
+
+  function setRailPlanningFilesEmpty(empty) {
+    var list = getRailPlanningFilesList();
+    var emptyState = getRailPlanningFilesEmptyState();
+    if (list) list.hidden = Boolean(empty);
+    if (emptyState) emptyState.hidden = !empty;
+  }
+
+  function clearRailPlanningFileSelection() {
+    getRailPlanningFileItems().forEach(function(item) {
+      item.classList.remove('is-selected');
+      item.setAttribute('aria-expanded', 'false');
+      var trigger = item.querySelector('[data-rail-planning-file-trigger]');
+      if (trigger) trigger.setAttribute('aria-expanded', 'false');
+      var detail = item.querySelector('[data-rail-planning-file-detail]');
+      if (detail) {
+        detail.classList.remove('is-open');
+        detail.style.maxHeight = '0px';
+        detail.setAttribute('aria-hidden', 'true');
+      }
+    });
+  }
+
+  function getRailPlanningFileDetail(item) {
+    if (!item) return null;
+    return item.querySelector('[data-rail-planning-file-detail]');
+  }
+
+  function setRailPlanningFileDetailOpen(item, open) {
+    var detail = getRailPlanningFileDetail(item);
+    if (!detail) return;
+    var trigger = item.querySelector('[data-rail-planning-file-trigger]');
+    item.classList.toggle('is-selected', Boolean(open));
+    item.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (trigger) trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
+    detail.classList.toggle('is-open', Boolean(open));
+    detail.setAttribute('aria-hidden', open ? 'false' : 'true');
+    detail.style.maxHeight = open ? (detail.scrollHeight + 'px') : '0px';
+  }
+
+  function closeRailPlanningFileDetail() {
+    clearRailPlanningFileSelection();
+  }
+
+  function buildProjectFileContentUrl(filePath) {
+    var base = getProjectFileContentBaseUrl();
+    if (!base) return '';
+    var url = new URL(base, window.location.origin);
+    url.searchParams.set('path', String(filePath || ''));
+    return url.toString();
+  }
+
+  function renderPlanningFileContentBody(body, data) {
+    if (!body) return;
+    body.innerHTML = '';
+
+    if (!data || data.is_binary) {
+      var empty = document.createElement('div');
+      empty.className = 'recent-file-item__detail-loading';
+      empty.textContent = 'Binary files cannot be shown inline.';
+      body.appendChild(empty);
+      return;
+    }
+
+    var content = String(data.content || '').replace(/\r\n?/g, '\n');
+    var lines = content.split('\n');
+    var viewer = document.createElement('div');
+    viewer.className = 'planning-file-viewer';
+
+    lines.forEach(function(line, index) {
+      var row = document.createElement('div');
+      row.className = 'planning-file-viewer__line';
+
+      var lineNo = document.createElement('span');
+      lineNo.className = 'planning-file-viewer__line-no';
+      lineNo.textContent = String(index + 1);
+
+      var code = document.createElement('code');
+      code.className = 'planning-file-viewer__line-code';
+      code.textContent = line || ' ';
+
+      row.appendChild(lineNo);
+      row.appendChild(code);
+      viewer.appendChild(row);
+    });
+
+    body.appendChild(viewer);
+  }
+
+  function requestPlanningFileContent(filePath) {
+    var key = String(filePath || '').trim();
+    if (!key) return Promise.reject(new Error('file_path_required'));
+    if (planningFileContentRequests.has(key)) return planningFileContentRequests.get(key);
+
+    var url = buildProjectFileContentUrl(key);
+    if (!url) return Promise.reject(new Error('file_content_url_missing'));
+
+    var request = fetch(url, {
+      headers: { Accept: 'application/json' },
+      credentials: 'same-origin',
+      cache: 'no-store',
+    })
+      .then(function(res) {
+        if (!res.ok) throw new Error('planning_file_content_request_failed');
+        return res.json();
+      })
+      .finally(function() {
+        planningFileContentRequests.delete(key);
+      });
+
+    planningFileContentRequests.set(key, request);
+    return request;
+  }
+
+  function buildPlanningFileNode(item) {
+    var link = document.createElement('a');
+    link.className = 'artifact-item artifact-item--button';
+    link.href = '/project/' + encodeURIComponent(getProjectId()) + '/file?path=' + encodeURIComponent(String(item.file_path || ''));
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+
+    var title = document.createElement('strong');
+    title.textContent = String(item.name || '(unknown file)');
+
+    var directory = document.createElement('span');
+    directory.textContent = String(item.directory || '.planning');
+
+    var code = document.createElement('code');
+    code.textContent = String(item.file_path || '');
+
+    link.appendChild(title);
+    link.appendChild(directory);
+    link.appendChild(code);
+    return link;
+  }
+
+  function buildRailPlanningFileNode(item, index) {
+    var filePath = String(item && item.file_path ? item.file_path : '').trim();
+    var fileName = String(item && item.name ? item.name : '').trim() || filePath.split('/').pop() || '(unknown file)';
+    var itemNode = document.createElement('div');
+    itemNode.className = 'recent-file-item planning-file-item';
+    itemNode.setAttribute('data-rail-planning-file-item', '');
+    itemNode.setAttribute('data-file-index', String(index));
+    itemNode.setAttribute('data-file-path', filePath);
+    itemNode.setAttribute('data-file-name', fileName);
+    itemNode.setAttribute('aria-expanded', 'false');
+
+    var trigger = document.createElement('button');
+    trigger.type = 'button';
+    trigger.className = 'artifact-item artifact-item--button recent-file-item__trigger';
+    trigger.setAttribute('data-rail-planning-file-trigger', '');
+    trigger.setAttribute('aria-expanded', 'false');
+    trigger.setAttribute('aria-controls', 'planning-file-detail-rail-' + index);
+
+    var left = document.createElement('span');
+    left.className = 'recent-file-item__summary-left';
+
+    var status = document.createElement('span');
+    status.className = 'recent-file-item__status';
+    status.textContent = 'Planning';
+
+    var name = document.createElement('strong');
+    name.className = 'recent-file-item__name';
+    name.textContent = fileName;
+
+    var meta = document.createElement('span');
+    meta.className = 'recent-file-item__meta';
+    var directory = document.createElement('span');
+    directory.textContent = String(item && item.directory ? item.directory : '.planning');
+    meta.appendChild(directory);
+    if (item && item.updated_at) {
+      var relative = document.createElement('span');
+      relative.textContent = formatRelativeTime(item.updated_at);
+      meta.appendChild(relative);
+    }
+    left.appendChild(status);
+    left.appendChild(name);
+    left.appendChild(meta);
+
+    var right = document.createElement('span');
+    right.className = 'recent-file-item__summary-right';
+    var summary = document.createElement('span');
+    summary.className = 'recent-file-item__summary';
+    summary.textContent = filePath;
+    var chevron = document.createElement('span');
+    chevron.className = 'recent-file-item__chevron';
+    chevron.setAttribute('aria-hidden', 'true');
+    chevron.textContent = '▾';
+    right.appendChild(summary);
+    right.appendChild(chevron);
+
+    trigger.appendChild(left);
+    trigger.appendChild(right);
+
+    var detail = document.createElement('div');
+    detail.className = 'recent-file-item__detail';
+    detail.id = 'planning-file-detail-rail-' + index;
+    detail.setAttribute('data-rail-planning-file-detail', '');
+    detail.setAttribute('aria-hidden', 'true');
+    detail.style.maxHeight = '0px';
+
+    var panel = document.createElement('div');
+    panel.className = 'recent-file-item__detail-panel';
+
+    var head = document.createElement('div');
+    head.className = 'recent-file-item__detail-head';
+
+    var pathNode = document.createElement('code');
+    pathNode.className = 'recent-file-item__detail-path recent-file-item__detail-path--full';
+    pathNode.textContent = filePath;
+
+    var openLink = document.createElement('a');
+    openLink.className = 'btn recent-file-item__open-file-btn';
+    openLink.href = buildRecentFileViewerUrl(filePath);
+    openLink.target = '_blank';
+    openLink.rel = 'noopener noreferrer';
+    openLink.setAttribute('aria-label', 'Open full file');
+    openLink.title = 'Open full file';
+    openLink.textContent = '↗';
+
+    head.appendChild(pathNode);
+    head.appendChild(openLink);
+
+    var body = document.createElement('div');
+    body.className = 'recent-file-item__detail-body recent-file-item__detail-body--file';
+    body.setAttribute('data-rail-planning-file-body', '');
+    var loading = document.createElement('div');
+    loading.className = 'recent-file-item__detail-loading';
+    loading.textContent = 'Click to load file contents.';
+    body.appendChild(loading);
+
+    panel.appendChild(head);
+    panel.appendChild(body);
+    detail.appendChild(panel);
+    itemNode.appendChild(trigger);
+    itemNode.appendChild(detail);
+    return itemNode;
+  }
+
+  function renderPlanningFiles(items) {
+    var list = getPlanningFilesList();
+    if (!list) return false;
+
+    var normalized = Array.isArray(items) ? items.slice() : [];
+    var signature = JSON.stringify(normalized);
+    if (signature === planningFilesLastSignature) return false;
+    planningFilesLastSignature = signature;
+
+    list.innerHTML = '';
+    if (!normalized.length) {
+      setPlanningFilesCount(0);
+      setPlanningFilesEmpty(true);
+      return true;
+    }
+
+    normalized.forEach(function(item) {
+      list.appendChild(buildPlanningFileNode(item));
+    });
+    setPlanningFilesCount(normalized.length);
+    setPlanningFilesEmpty(false);
+    return true;
+  }
+
+  function renderRailPlanningFiles(items) {
+    var list = getRailPlanningFilesList();
+    if (!list) return false;
+
+    var normalized = Array.isArray(items) ? items.slice() : [];
+    var signature = JSON.stringify(normalized);
+    if (signature === railPlanningFilesLastSignature) return false;
+    railPlanningFilesLastSignature = signature;
+
+    list.innerHTML = '';
+    if (!normalized.length) {
+      setRailPlanningFilesCount(0);
+      setRailPlanningFilesEmpty(true);
+      return true;
+    }
+
+    normalized.forEach(function(item, index) {
+      list.appendChild(buildRailPlanningFileNode(item, index));
+    });
+    setRailPlanningFilesCount(normalized.length);
+    setRailPlanningFilesEmpty(false);
+    return true;
   }
 
   function createRecentFileItem(item, index) {
@@ -653,6 +1103,37 @@
     return requestRecentFilesData(url);
   }
 
+  function refreshPlanningFiles(force) {
+    var url = getPlanningFilesUrl();
+    if (!url) return Promise.resolve(null);
+    if (!force && planningFilesRequest) return planningFilesRequest;
+
+    planningFilesRequest = fetch(url, {
+      headers: {
+        Accept: 'application/json',
+      },
+      credentials: 'same-origin',
+      cache: 'no-store',
+    })
+      .then(function(res) {
+        if (!res.ok) throw new Error('planning_files_request_failed');
+        return res.json();
+      })
+      .then(function(data) {
+        renderPlanningFiles(data.files);
+        renderRailPlanningFiles(data.files);
+        planningFilesRequest = null;
+        return data;
+      })
+      .catch(function(err) {
+        planningFilesRequest = null;
+        console.error('planning files refresh failed', err);
+        throw err;
+      });
+
+    return planningFilesRequest;
+  }
+
   function getCurrentSessionId() {
     var context = getProjectContext();
     if (context && context.sessionId) return String(context.sessionId).trim();
@@ -753,6 +1234,47 @@
 
   function closeRecentFileDetail() {
     clearRecentFileSelection();
+  }
+
+  function openRailPlanningFileDetail(button) {
+    if (!button) return;
+
+    var item = typeof button.closest === 'function'
+      ? button.closest('[data-rail-planning-file-item]')
+      : button;
+    if (!item) return;
+
+    var selected = item.classList.contains('is-selected') && getRailPlanningFileDetail(item) && getRailPlanningFileDetail(item).classList.contains('is-open');
+    if (selected) {
+      closeRailPlanningFileDetail();
+      return;
+    }
+
+    clearRailPlanningFileSelection();
+    setRailPlanningFileDetailOpen(item, true);
+
+    var body = item.querySelector('[data-rail-planning-file-body]');
+    if (!body || body.getAttribute('data-file-loaded') === 'true') return;
+    body.innerHTML = '';
+    var loading = document.createElement('div');
+    loading.className = 'recent-file-item__detail-loading';
+    loading.textContent = 'Loading file contents...';
+    body.appendChild(loading);
+
+    requestPlanningFileContent(item.getAttribute('data-file-path') || '')
+      .then(function(data) {
+        renderPlanningFileContentBody(body, data);
+        body.setAttribute('data-file-loaded', 'true');
+        setRailPlanningFileDetailOpen(item, true);
+      })
+      .catch(function() {
+        body.innerHTML = '';
+        var error = document.createElement('div');
+        error.className = 'recent-file-item__detail-loading recent-file-item__detail-loading--error';
+        error.textContent = 'Unable to load file contents.';
+        body.appendChild(error);
+        setRailPlanningFileDetailOpen(item, true);
+      });
   }
 
   function openRecentFileDetail(button) {
@@ -1600,16 +2122,22 @@
     stopPolling();
     stopRecentFilesPolling();
     recentFilesLastSignature = '';
+    planningFilesLastSignature = '';
+    railPlanningFilesLastSignature = '';
     currentShell.replaceWith(nextShell.cloneNode(true));
     closeSidebar();
     syncFilterState();
     syncProjectRailWidth();
+    syncProjectRailView();
     rehydratePageModules();
     bindMessageComposer();
+    syncMessageExpanders();
+    syncChatBubbleDetailSummaries();
     if (hasProjectId()) {
       bindPolling();
       scheduleRecentFilesPolling();
     }
+    refreshPlanningFiles(true).catch(function() {});
     if (isConversationTab()) {
       scrollThreadToBottom();
     }
@@ -1688,6 +2216,13 @@
       return;
     }
 
+    var planningFileTrigger = e.target.closest('[data-rail-planning-file-trigger]');
+    if (planningFileTrigger) {
+      e.preventDefault();
+      openRailPlanningFileDetail(planningFileTrigger);
+      return;
+    }
+
     var sidebarToggle = e.target.closest('[data-sidebar-toggle]');
     if (sidebarToggle) {
       e.preventDefault();
@@ -1726,6 +2261,20 @@
 
     e.preventDefault();
     navigate(nextUrl.toString(), true);
+  }
+
+  function handleDocumentChange(e) {
+    var railViewSelect = e.target && typeof e.target.closest === 'function'
+      ? e.target.closest('[data-project-rail-view-select]')
+      : null;
+    if (!railViewSelect) return;
+
+    var nextView = setProjectRailView(railViewSelect.value, true);
+    if (nextView === 'planning') {
+      refreshPlanningFiles(true).catch(function() {});
+      return;
+    }
+    refreshRecentFiles(true);
   }
 
   function handleDocumentSubmit(e) {
@@ -1768,6 +2317,7 @@
     document.addEventListener('focusin', handleDocumentIntent);
     document.addEventListener('submit', handleDocumentSubmit);
     document.addEventListener('input', handleDocumentInput);
+    document.addEventListener('change', handleDocumentChange);
     document.addEventListener('toggle', handleDocumentToggle, true);
     document.addEventListener('pointerdown', startProjectRailResize);
     window.addEventListener('popstate', handlePopState);
@@ -1782,8 +2332,10 @@
     wireProjectSettingsWizard();
     syncFilterState();
     syncProjectRailWidth();
+    syncProjectRailView();
     setRecentFilesSort(readRecentFilesSort(), false);
     refreshRecentFiles(true);
+    refreshPlanningFiles(true).catch(function() {});
     prefetchProjectTabs();
     if (hasProjectId()) {
       bindPolling();
@@ -1808,6 +2360,7 @@
     renderQueuedMessages: renderQueuedMessages,
     openRecentFileDetail: openRecentFileDetail,
     closeRecentFileDetail: closeRecentFileDetail,
+    openRailPlanningFileDetail: openRailPlanningFileDetail,
     setDesktopSidebarCollapsed: setDesktopSidebarCollapsed,
   };
 })();

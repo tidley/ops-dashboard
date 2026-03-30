@@ -510,9 +510,9 @@
               <h2>Hourly token use today</h2>
             </div>
             <div class="usage-range-toggle" role="tablist" aria-label="Aggregate usage range">
-              <button type="button" class="chip" data-usage-range="24h">24h</button>
-              <button type="button" class="chip" data-usage-range="7d">7d</button>
-              <button type="button" class="chip" data-usage-range="30d">30d</button>
+              <button type="button" class="chip chip--active" data-usage-range="24h" aria-selected="true" aria-pressed="true">24h</button>
+              <button type="button" class="chip" data-usage-range="7d" aria-selected="false" aria-pressed="false">7d</button>
+              <button type="button" class="chip" data-usage-range="30d" aria-selected="false" aria-pressed="false">30d</button>
             </div>
           </div>
           <% if (usage.aggregateTodayTotal || usage.aggregateWeeklyTotal || usage.aggregate30dTotal) { %>

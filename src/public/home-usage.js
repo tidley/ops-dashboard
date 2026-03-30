@@ -283,6 +283,7 @@
     buttons.forEach(function(button) {
       var active = button.getAttribute('data-usage-range') === selectedRange;
       button.classList.toggle('chip--active', active);
+      button.setAttribute('aria-selected', active ? 'true' : 'false');
       button.setAttribute('aria-pressed', active ? 'true' : 'false');
     });
 
@@ -292,10 +293,17 @@
   }
 
   function initUsagePanel(panel) {
+    if (!panel || panel.__opsDashboardUsageBound) {
+      setUsagePanelRange(panel, panel && panel.getAttribute ? panel.getAttribute('data-usage-range-selected') || panel.getAttribute('data-usage-default-range') : '24h');
+      return;
+    }
+    panel.__opsDashboardUsageBound = true;
+
     var buttons = Array.prototype.slice.call(panel.querySelectorAll('[data-usage-range]'));
     if (!buttons.length) return;
 
     buttons.forEach(function(button) {
+      button.setAttribute('role', 'tab');
       button.addEventListener('click', function() {
         setUsagePanelRange(panel, button.getAttribute('data-usage-range'));
       });

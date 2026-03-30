@@ -7,7 +7,13 @@ const { initDb, db } = require('./db');
 const store = require('./store');
 const { buildProjectGroups } = require('./sidebar');
 const { routeToAgent, routeToCodex } = require('./router');
-const { loadPlanningContext } = require('./planning');
+const {
+  createPlanningBundle,
+  loadPlanningContext,
+  normalizePlanningBundle,
+  readPlanningBundle,
+  writePlanningBundle,
+} = require('./planning');
 const {
   collectOpenClawControlPanel,
   normalizeList: normalizeOpenClawList,
@@ -525,6 +531,43 @@ function isPathInsideRoot(root, filePath) {
   return resolvedFile === resolvedRoot || resolvedFile.startsWith(`${resolvedRoot}${path.sep}`);
 }
 
+function readProjectFileSnapshot(project, relativePath, folderSettings = null) {
+  const root = resolveProjectRoot(project, folderSettings);
+  if (!root) {
+    return { error: 'workspace_root_not_found', statusCode: 404 };
+  }
+
+  const safeRelativePath = String(relativePath || '').trim();
+  if (!safeRelativePath) {
+    return { error: 'file_path_required', statusCode: 400 };
+  }
+
+  const absolutePath = path.resolve(root, safeRelativePath);
+  if (!isPathInsideRoot(root, absolutePath)) {
+    return { error: 'invalid_file_path', statusCode: 400 };
+  }
+
+  let buffer;
+  try {
+    buffer = fs.readFileSync(absolutePath);
+  } catch {
+    return { error: 'file_not_found', statusCode: 404 };
+  }
+
+  const isBinary = buffer.includes(0);
+  const content = isBinary ? '' : buffer.toString('utf8');
+  const lineCount = isBinary ? 0 : String(content).replace(/\r\n?/g, '\n').split('\n').length;
+
+  return {
+    root,
+    absolutePath,
+    relativePath: safeRelativePath,
+    content,
+    isBinary,
+    lineCount,
+  };
+}
+
 function buildFileViewerPage({ project, root, filePath, content, isBinary = false }) {
   const projectName = project?.name || 'Project';
   const safeFilePath = escapeHtml(filePath);
@@ -671,6 +714,60 @@ function buildFileViewerPage({ project, root, filePath, content, isBinary = fals
   </main>
 </body>
 </html>`;
+}
+
+function buildPlanningFiles(project, folderSettings = null) {
+  const root = resolveProjectRoot(project, folderSettings);
+  if (!root) return [];
+
+  const planningRoot = path.join(root, '.planning');
+  if (!fs.existsSync(planningRoot)) return [];
+
+  const files = [];
+  const stack = [planningRoot];
+
+  while (stack.length) {
+    const currentDir = stack.pop();
+    let entries = [];
+    try {
+      entries = fs.readdirSync(currentDir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+
+    entries
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .forEach((entry) => {
+        const absolutePath = path.join(currentDir, entry.name);
+        if (entry.isDirectory()) {
+          stack.push(absolutePath);
+          return;
+        }
+        if (!entry.isFile()) return;
+
+        let stat = null;
+        try {
+          stat = fs.statSync(absolutePath);
+        } catch {
+          stat = null;
+        }
+
+        const repoRelativePath = path.relative(root, absolutePath).split(path.sep).join('/');
+        const planningRelativePath = path.relative(planningRoot, absolutePath).split(path.sep).join('/');
+        const directory = path.posix.dirname(planningRelativePath);
+
+        files.push({
+          file_path: repoRelativePath,
+          relative_path: planningRelativePath,
+          name: path.basename(absolutePath),
+          directory: directory === '.' ? '' : directory,
+          updated_at: stat ? stat.mtime.toISOString() : '',
+          size_bytes: stat ? stat.size : 0,
+        });
+      });
+  }
+
+  return files.sort((a, b) => a.relative_path.localeCompare(b.relative_path));
 }
 
 function buildRecentFileChanges(project, limit = 10, folderSettings = null) {
@@ -1038,22 +1135,105 @@ function buildDashboardPlanning() {
   return loadPlanningContext({ includeDashboard: true, includePlaybook: true });
 }
 
+function getProjectPlanningDir(project, folderSettings = null) {
+  const root = resolveProjectRoot(project, folderSettings);
+  return root ? path.join(root, '.planning') : '';
+}
+
+function readProjectPlanningBundle(project, folderSettings = null) {
+  const planningDir = getProjectPlanningDir(project, folderSettings);
+  return readPlanningBundle(planningDir, 'project');
+}
+
+function signaturesMatch(a, b) {
+  return JSON.stringify(normalizePlanningBundle(a || {})) === JSON.stringify(normalizePlanningBundle(b || {}));
+}
+
+function syncProjectPlanningBundle(project, folderSettings = null) {
+  const projectState = store.ensureProjectState(project.id);
+  const cache = projectState?.ui_cache_json || {};
+  const cachedBundle = cache.projectPlanningBundle
+    ? normalizePlanningBundle(cache.projectPlanningBundle)
+    : null;
+  const planningDir = getProjectPlanningDir(project, folderSettings);
+  const fileBundle = readProjectPlanningBundle(project, folderSettings);
+
+  if (cachedBundle) {
+    if (planningDir && (!fileBundle || !signaturesMatch(fileBundle, cachedBundle))) {
+      writePlanningBundle(planningDir, cachedBundle);
+    }
+    return cachedBundle;
+  }
+
+  if (fileBundle) {
+    store.updateProjectUiCache(project.id, {
+      projectPlanningBundle: fileBundle,
+    });
+    return fileBundle;
+  }
+
+  const emptyBundle = createPlanningBundle('project', planningDir);
+  if (planningDir) {
+    store.updateProjectUiCache(project.id, {
+      projectPlanningBundle: emptyBundle,
+    });
+  }
+  return emptyBundle;
+}
+
 function buildProjectPlanning(project, folderSettings = null) {
+  const projectBundle = syncProjectPlanningBundle(project, folderSettings);
   return loadPlanningContext({
     projectRoot: resolveProjectRoot(project, folderSettings),
+    projectBundle,
     includeDashboard: false,
     includePlaybook: true,
   });
 }
 
-function buildProjectMemorySnapshot(project, activeSession, messages, logs, artifacts, folderSettings = null) {
-  const projectSettings = folderSettings || getProjectFolderSettings(project);
+function buildProjectUiCacheSnapshot(project, folderSettings = null, options = {}) {
+  const recentFileLimit = Math.max(1, Number(options.recentFileLimit) || 25);
+  const projectPlanningBundle = syncProjectPlanningBundle(project, folderSettings);
   return {
-    workspaceDir: resolveProjectRoot(project, projectSettings),
-    workspaceBranch: resolveProjectBranch(project, projectSettings),
+    workspaceDir: resolveProjectRoot(project, folderSettings),
+    workspaceBranch: resolveProjectBranch(project, folderSettings),
+    latestCommit: buildLatestCommitSnapshot(project, 6, folderSettings),
+    recentFileChanges: buildRecentFileChanges(project, recentFileLimit, folderSettings),
+    planningFiles: buildPlanningFiles(project, folderSettings),
+    projectPlanningBundle,
+  };
+}
+
+function getProjectUiCacheSnapshot(project, folderSettings = null, options = {}) {
+  const state = store.ensureProjectState(project.id);
+  const cache = state?.ui_cache_json || {};
+  const hasRecentFiles = Array.isArray(cache.recentFileChanges);
+  const hasPlanningFiles = Array.isArray(cache.planningFiles);
+  const hasPlanningBundle = Boolean(cache.projectPlanningBundle);
+  const hasWorkspace = Object.prototype.hasOwnProperty.call(cache, 'workspaceDir');
+  const hasLatestCommit = Object.prototype.hasOwnProperty.call(cache, 'latestCommit');
+
+  if (hasWorkspace && hasRecentFiles && hasPlanningFiles && hasPlanningBundle && hasLatestCommit) {
+    return cache;
+  }
+
+  const snapshot = {
+    ...cache,
+    ...buildProjectUiCacheSnapshot(project, folderSettings, options),
+  };
+  store.updateProjectUiCache(project.id, snapshot);
+  return snapshot;
+}
+
+function buildProjectMemorySnapshot(project, activeSession, messages, logs, artifacts, folderSettings = null, uiCache = null) {
+  const projectSettings = folderSettings || getProjectFolderSettings(project);
+  const cache = uiCache || {};
+  return {
+    workspaceDir: cache.workspaceDir || resolveProjectRoot(project, projectSettings),
+    workspaceBranch: cache.workspaceBranch || resolveProjectBranch(project, projectSettings),
     memoryNamespace: project?.memory_namespace || '',
     projectSettings,
-    latestCommit: buildLatestCommitSnapshot(project, 6, projectSettings),
+    latestCommit: cache.latestCommit || buildLatestCommitSnapshot(project, 6, projectSettings),
     state: project?.ui_state || {},
     recentSessions: (project?.sessions || []).slice(0, 5).map(session => ({
       id: session.id,
@@ -1087,8 +1267,10 @@ function buildProjectMemorySnapshot(project, activeSession, messages, logs, arti
       file_path: artifact.file_path,
       created_at: artifact.created_at,
     })),
-    recentFileChanges: buildRecentFileChanges(project, 8),
-    latestCommit: buildLatestCommitSnapshot(project, 6),
+    recentFileChanges: Array.isArray(cache.recentFileChanges)
+      ? cache.recentFileChanges.slice(0, 8)
+      : buildRecentFileChanges(project, 8, projectSettings),
+    planningFiles: Array.isArray(cache.planningFiles) ? cache.planningFiles : buildPlanningFiles(project, projectSettings),
     activeSession: activeSession || null,
   };
 }
@@ -1468,14 +1650,29 @@ app.get('/project/:projectId', (req, res) => {
   const conversationAgent = activeTab === 'main-agent'
     ? resolveConversationAgent(conversationProject, 'main')
     : resolveConversationAgent(project, 'project');
-  const projectMemory = buildProjectMemorySnapshot(activeTab === 'main-agent' ? conversationProject : project, activeSession, messages, logs, artifacts, projectFolderSettings);
-  const workspaceBranch = resolveProjectBranch(activeTab === 'main-agent' ? conversationProject : project, projectFolderSettings);
+  const projectUiCache = getProjectUiCacheSnapshot(project, projectFolderSettings, { recentFileLimit: 25 });
+  const projectMemory = buildProjectMemorySnapshot(
+    activeTab === 'main-agent' ? conversationProject : project,
+    activeSession,
+    messages,
+    logs,
+    artifacts,
+    projectFolderSettings,
+    projectUiCache,
+  );
+  const workspaceBranch = projectUiCache.workspaceBranch || resolveProjectBranch(project, projectFolderSettings);
   const recentFileSort = formatRecentFileSortState(req.query.recent_files_sort || 'recent:desc');
   const recentFileChanges = sortRecentFileChanges(
-    buildRecentFileChanges(activeTab === 'main-agent' ? conversationProject : project, 25, projectFolderSettings),
+    Array.isArray(projectUiCache.recentFileChanges)
+      ? projectUiCache.recentFileChanges
+      : buildRecentFileChanges(project, 25, projectFolderSettings),
     recentFileSort,
   );
+  const planningFiles = Array.isArray(projectUiCache.planningFiles)
+    ? projectUiCache.planningFiles
+    : buildPlanningFiles(project, projectFolderSettings);
   projectMemory.recentFileChanges = recentFileChanges;
+  projectMemory.planningFiles = planningFiles;
   const projectSettingsWizard = buildProjectSettingsWizard(project, globalWorkspaceSettings);
   const codexModel = process.env.CODEX_MODEL || 'gpt-5.3-codex';
   const codexConfigured = Boolean(process.env.OPENAI_API_KEY);
@@ -1509,6 +1706,7 @@ app.get('/project/:projectId', (req, res) => {
     projectMemory,
     recentFileChanges,
     recentFileSort,
+    planningFiles,
     projectUsage,
     projectFolderSettings,
     projectSettingsWizard,
@@ -1528,35 +1726,46 @@ app.get('/project/:projectId/file', (req, res) => {
 
   const globalWorkspaceSettings = getGlobalWorkspaceSettings();
   const folderSettings = getProjectFolderSettings(project, globalWorkspaceSettings);
-  const root = resolveProjectRoot(project, folderSettings);
-  if (!root) return res.status(404).send('Workspace root not found');
-
   const relativePath = lastStringField(req.query.path || req.query.file_path || '', '');
-  if (!relativePath) return res.status(400).send('File path is required');
-
-  const absolutePath = path.resolve(root, relativePath);
-  if (!isPathInsideRoot(root, absolutePath)) {
-    return res.status(400).send('Invalid file path');
-  }
-
-  let buffer;
-  try {
-    buffer = fs.readFileSync(absolutePath);
-  } catch {
+  const snapshot = readProjectFileSnapshot(project, relativePath, folderSettings);
+  if (snapshot.error) {
+    if (snapshot.error === 'file_path_required') return res.status(400).send('File path is required');
+    if (snapshot.error === 'invalid_file_path') return res.status(400).send('Invalid file path');
+    if (snapshot.error === 'workspace_root_not_found') return res.status(404).send('Workspace root not found');
     return res.status(404).send('File not found');
   }
 
-  const isBinary = buffer.includes(0);
-  const content = isBinary ? '' : buffer.toString('utf8');
   const viewerHtml = buildFileViewerPage({
     project,
-    root,
-    filePath: relativePath,
-    content,
-    isBinary,
+    root: snapshot.root,
+    filePath: snapshot.relativePath,
+    content: snapshot.content,
+    isBinary: snapshot.isBinary,
   });
 
   res.type('html').send(viewerHtml);
+});
+
+app.get('/api/project/:projectId/file-content', (req, res) => {
+  const project = store.getProject(req.params.projectId);
+  if (!project) return res.status(404).json({ error: 'project_not_found' });
+
+  const globalWorkspaceSettings = getGlobalWorkspaceSettings();
+  const folderSettings = getProjectFolderSettings(project, globalWorkspaceSettings);
+  const relativePath = lastStringField(req.query.path || req.query.file_path || '', '');
+  const snapshot = readProjectFileSnapshot(project, relativePath, folderSettings);
+
+  if (snapshot.error) {
+    return res.status(snapshot.statusCode || 400).json({ error: snapshot.error });
+  }
+
+  return res.json({
+    project_id: project.id,
+    file_path: snapshot.relativePath,
+    is_binary: snapshot.isBinary,
+    line_count: snapshot.lineCount,
+    content: snapshot.content,
+  });
 });
 
 app.post('/api/projects', (req, res) => {
@@ -1789,16 +1998,38 @@ app.get('/api/project/:projectId/recent-files', (req, res) => {
   const tab = normalizeProjectTab(req.query.tab);
   const folderSettings = getProjectFolderSettings(project, getGlobalWorkspaceSettings());
   const recentFileSort = formatRecentFileSortState(req.query.sort || 'recent:desc');
-  const targetProject = tab === 'main-agent' ? resolveConversationProject(project, 'main') : project;
   const files = sortRecentFileChanges(
-    buildRecentFileChanges(targetProject, Number(req.query.limit) || 10, folderSettings),
+    buildRecentFileChanges(project, Number(req.query.limit) || 25, folderSettings),
     recentFileSort,
   );
+  store.updateProjectUiCache(project.id, {
+    workspaceDir: resolveProjectRoot(project, folderSettings),
+    workspaceBranch: resolveProjectBranch(project, folderSettings),
+    recentFileChanges: files,
+  });
 
   return res.json({
     project_id: project.id,
     tab,
     sort: recentFileSort,
+    refreshed_at: new Date().toISOString(),
+    files,
+  });
+});
+
+app.get('/api/project/:projectId/planning-files', (req, res) => {
+  const project = store.getProject(req.params.projectId);
+  if (!project) return res.status(404).json({ error: 'project_not_found' });
+
+  const folderSettings = getProjectFolderSettings(project, getGlobalWorkspaceSettings());
+  const files = buildPlanningFiles(project, folderSettings);
+  store.updateProjectUiCache(project.id, {
+    workspaceDir: resolveProjectRoot(project, folderSettings),
+    planningFiles: files,
+  });
+
+  return res.json({
+    project_id: project.id,
     refreshed_at: new Date().toISOString(),
     files,
   });
@@ -1913,5 +2144,7 @@ app.processProjectMessage = processProjectMessage;
 app.relayAccessController = relayAccessController;
 app.buildDashboardUsageStats = buildDashboardUsageStats;
 app.buildRecentFileChanges = buildRecentFileChanges;
+app.buildPlanningFiles = buildPlanningFiles;
 app.sortRecentFileChanges = sortRecentFileChanges;
 app.buildLatestCommitSnapshot = buildLatestCommitSnapshot;
+app.readProjectFileSnapshot = readProjectFileSnapshot;

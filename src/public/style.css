@@ -1536,6 +1536,49 @@ body[data-active-tab='main-agent'] .project-layout__main {
     text-align: right;
   }
 
+  .project-rail__view-picker {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .project-rail__view-picker::after {
+    content: '▾';
+    position: absolute;
+    right: 0;
+    top: 50%;
+    color: var(--muted);
+    font-size: 0.88rem;
+    pointer-events: none;
+    transform: translateY(-50%);
+  }
+
+  .project-rail__view-select {
+    appearance: none;
+    max-width: 100%;
+    padding: 0 18px 0 0;
+    border: 0;
+    background: transparent;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 1.24rem;
+    font-weight: 600;
+    line-height: 1.15;
+    text-align: right;
+    text-align-last: right;
+    cursor: pointer;
+  }
+
+  .project-rail__view-select:focus {
+    outline: none;
+  }
+
+  .project-rail__view-picker:hover::after {
+    color: var(--text);
+  }
+
   .project-rail__count {
     color: var(--muted);
     font-size: 0.78rem;
@@ -1556,6 +1599,10 @@ body[data-active-tab='main-agent'] .project-layout__main {
     justify-items: stretch;
     width: 100%;
     grid-column: 1 / -1;
+  }
+
+  .project-rail[data-project-rail-view='planning'] .project-rail__sort-row {
+    display: none;
   }
 
   .project-rail__sorts {
@@ -1744,6 +1791,14 @@ body[data-active-tab='main-agent'] .project-layout__main {
 
   .recent-files-shell--rail {
     margin-top: 0;
+  }
+
+  .project-rail__panel {
+    min-height: 0;
+  }
+
+  .project-rail__panel[hidden] {
+    display: none !important;
   }
 }
 
@@ -2175,7 +2230,7 @@ body[data-active-tab='main-agent'] .project-layout {
   background: transparent;
 }
 
-.chip--active {
+.usage-range-toggle .chip.chip--active {
   border-bottom-color: rgba(124, 184, 255, 0.92);
   background: transparent;
   color: var(--text);
@@ -2863,6 +2918,71 @@ button.is-busy:hover {
   max-height: 420px;
   overflow: auto;
   white-space: normal;
+}
+
+.recent-file-item__detail-body--file {
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg-2);
+  color: #dce5f4;
+  min-height: 220px;
+  max-height: 420px;
+  overflow: auto;
+}
+
+.recent-file-item__detail-loading {
+  padding: 14px 16px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+}
+
+.recent-file-item__detail-loading--error {
+  color: #ff9a9a;
+}
+
+.planning-file-viewer {
+  display: grid;
+  gap: 0;
+}
+
+.planning-file-viewer__line {
+  display: grid;
+  grid-template-columns: 3.8rem minmax(0, 1fr);
+  gap: 12px;
+  padding: 0 12px;
+  min-height: 1.55rem;
+  border-top: 1px solid rgba(44, 52, 68, 0.65);
+  align-items: start;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.planning-file-viewer__line:first-child {
+  border-top: 0;
+}
+
+.planning-file-viewer__line-no {
+  position: sticky;
+  left: 0;
+  padding: 0.12rem 0;
+  color: var(--muted);
+  text-align: right;
+  user-select: none;
+  background: var(--bg-2);
+}
+
+.planning-file-viewer__line-code {
+  display: block;
+  padding: 0.12rem 0;
+  margin: 0;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .recent-file-diff-line {

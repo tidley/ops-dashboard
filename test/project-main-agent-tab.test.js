@@ -136,6 +136,7 @@ describe('project main agent tab', function() {
 
     assert.match(html, /data-active-tab="main-agent"/);
     assert.match(html, /OpenClaw Main/);
+    assert.match(html, />Planning<\/a>/);
     assert.match(html, /data-openclaw-main-switch/);
     assert.match(html, /data-sidebar-toggle/);
     assert.match(html, /name="agent_id" value="agent-openclaw-main"/);
@@ -253,6 +254,13 @@ describe('project main agent tab', function() {
         effectiveBackend: 'openclaw-proxy',
         source: 'global',
       },
+      planningFiles: [
+        {
+          name: 'NOW.md',
+          directory: '.planning',
+          file_path: '.planning/NOW.md',
+        },
+      ],
       recentFileChanges: [
         {
           status: 'M',
@@ -275,6 +283,13 @@ describe('project main agent tab', function() {
     });
 
     assert.match(html, /Live changes/);
+    assert.match(html, /data-project-rail-view-select/);
+    assert.match(html, /<option value="recent">Live changes<\/option>/);
+    assert.match(html, /<option value="planning">Planning files<\/option>/);
+    assert.match(html, /data-rail-planning-files-root/);
+    assert.match(html, /data-rail-planning-file-trigger/);
+    assert.match(html, /data-rail-planning-file-body/);
+    assert.match(html, /\.planning\/NOW\.md/);
     assert.match(html, /data-recent-files-root/);
     assert.match(html, /## Working tree/);
     assert.match(html, /\+new/);

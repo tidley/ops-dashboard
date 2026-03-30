@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { v4: uuid } = require('uuid');
 const { db } = require('./db');
+const { normalizePlanningBundle, writePlanningBundle } = require('./planning');
 const {
   normalizeAccessRole,
   normalizeAccessScope,
@@ -28,11 +29,44 @@ const DEFAULT_PROJECT_IGNORE_PATTERNS = [
   'default-agents-project-*',
   'test-wf-*',
 ];
+const PLANNING_WRITE_DEBOUNCE_MS = Math.max(0, Number(process.env.PLANNING_WRITE_DEBOUNCE_MS || 5000) || 0);
+const planningMirrorTimers = new Map();
 
 fs.mkdirSync(ROOT_PROJECTS_DIR, { recursive: true });
 
 function now() { return new Date().toISOString(); }
 function parseJson(raw, fallback) { try { return JSON.parse(raw); } catch { return fallback; } }
+
+function getProjectPlanningDir(project) {
+  const settings = project?.settings_json || {};
+  const root = `${settings.code_folder || settings.imported_from || project?.workspace_dir || ''}`.trim();
+  return root ? path.join(root, '.planning') : '';
+}
+
+function schedulePlanningMirrorWrite(projectId, bundle) {
+  const normalized = normalizePlanningBundle(bundle || {});
+  const project = getProject(projectId);
+  if (!project) return;
+
+  const planningDir = getProjectPlanningDir(project);
+  if (!planningDir) return;
+
+  const existing = planningMirrorTimers.get(projectId);
+  if (existing) clearTimeout(existing);
+
+  const flush = () => {
+    planningMirrorTimers.delete(projectId);
+    writePlanningBundle(planningDir, normalized);
+  };
+
+  if (PLANNING_WRITE_DEBOUNCE_MS === 0) {
+    flush();
+    return;
+  }
+
+  const timer = setTimeout(flush, PLANNING_WRITE_DEBOUNCE_MS);
+  planningMirrorTimers.set(projectId, timer);
+}
 
 function getProjectIgnorePath() {
   if (process.env.PROJECT_IGNORE_FILE) {
@@ -222,6 +256,8 @@ function getProjectState(projectId) {
     openclaw_memory_json: parseJson(state.openclaw_memory_json, {}),
     openclaw_bootstrapped_at: state.openclaw_bootstrapped_at || '',
     openclaw_last_seen_at: state.openclaw_last_seen_at || '',
+    ui_cache_json: parseJson(state.ui_cache_json, {}),
+    ui_cache_updated_at: state.ui_cache_updated_at || '',
   } : null;
 }
 
@@ -249,14 +285,20 @@ function touchProjectState(projectId, input = {}) {
   const openclawLastSeenAt = Object.prototype.hasOwnProperty.call(input, 'openclaw_last_seen_at')
     ? (input.openclaw_last_seen_at || '')
     : (current.openclaw_last_seen_at || '');
+  const uiCacheJson = Object.prototype.hasOwnProperty.call(input, 'ui_cache_json')
+    ? JSON.stringify(input.ui_cache_json || {})
+    : JSON.stringify(current.ui_cache_json || {});
+  const uiCacheUpdatedAt = Object.prototype.hasOwnProperty.call(input, 'ui_cache_updated_at')
+    ? (input.ui_cache_updated_at || '')
+    : (current.ui_cache_updated_at || '');
 
   db.prepare(`
     INSERT INTO project_state (
       project_id, last_opened_at, last_tab, last_session_id,
       openclaw_session_id, openclaw_memory_json, openclaw_bootstrapped_at, openclaw_last_seen_at,
-      updated_at
+      ui_cache_json, ui_cache_updated_at, updated_at
     )
-    VALUES (?,?,?,?,?,?,?,?,?)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?)
     ON CONFLICT(project_id) DO UPDATE SET
       last_opened_at=excluded.last_opened_at,
       last_tab=excluded.last_tab,
@@ -265,10 +307,41 @@ function touchProjectState(projectId, input = {}) {
       openclaw_memory_json=excluded.openclaw_memory_json,
       openclaw_bootstrapped_at=excluded.openclaw_bootstrapped_at,
       openclaw_last_seen_at=excluded.openclaw_last_seen_at,
+      ui_cache_json=excluded.ui_cache_json,
+      ui_cache_updated_at=excluded.ui_cache_updated_at,
       updated_at=excluded.updated_at
-  `).run(projectId, lastOpenedAt, lastTab, lastSessionId, openclawSessionId, openclawMemoryJson, openclawBootstrappedAt, openclawLastSeenAt, t);
+  `).run(
+    projectId,
+    lastOpenedAt,
+    lastTab,
+    lastSessionId,
+    openclawSessionId,
+    openclawMemoryJson,
+    openclawBootstrappedAt,
+    openclawLastSeenAt,
+    uiCacheJson,
+    uiCacheUpdatedAt,
+    t,
+  );
 
   return getProjectState(projectId);
+}
+
+function updateProjectUiCache(projectId, patch = {}) {
+  const current = getProjectState(projectId) || {};
+  const nextCache = {
+    ...(current.ui_cache_json || {}),
+    ...(patch || {}),
+  };
+
+  if (Object.prototype.hasOwnProperty.call(patch || {}, 'projectPlanningBundle')) {
+    schedulePlanningMirrorWrite(projectId, patch.projectPlanningBundle);
+  }
+
+  return touchProjectState(projectId, {
+    ui_cache_json: nextCache,
+    ui_cache_updated_at: now(),
+  });
 }
 
 function ensureProjectState(projectId) {
@@ -932,6 +1005,7 @@ module.exports = {
   listAccessEvents,
   getProjectState,
   touchProjectState,
+  updateProjectUiCache,
   updateProjectSettings,
   getAppSetting,
   setProjectFavorite,

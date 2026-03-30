@@ -149,10 +149,21 @@ function createHarness() {
   body.setAttribute('data-project-id', '');
   body.setAttribute('data-active-tab', 'overview');
 
+  const rail = createNode('aside');
+  rail.setAttribute('data-project-rail', '');
+  rail.setAttribute('data-project-rail-view', 'recent');
+  rail.setAttribute('data-project-rail-recent-count', '0');
+  rail.setAttribute('data-project-rail-planning-count', '1');
+
   const section = createNode('div');
   section.className = 'project-rail__section';
 
+  const viewSelect = createNode('select');
+  viewSelect.setAttribute('data-project-rail-view-select', '');
+  viewSelect.value = 'recent';
+
   const count = createNode('div');
+  count.setAttribute('data-project-rail-view-count', '');
   count.setAttribute('data-recent-files-count', '');
   count.textContent = '0 items';
 
@@ -165,6 +176,20 @@ function createHarness() {
   const list = createNode('div');
   list.setAttribute('data-recent-files-list', '');
   root.appendChild(list);
+
+  const planningRoot = createNode('div');
+  planningRoot.setAttribute('data-rail-planning-files-root', '');
+  planningRoot.setAttribute('data-planning-files-url', '/api/project/proj-sort/planning-files');
+  planningRoot.setAttribute('data-project-file-content-url', '/api/project/proj-sort/file-content');
+  planningRoot.hidden = true;
+
+  const planningList = createNode('div');
+  planningList.setAttribute('data-rail-planning-files-list', '');
+  planningRoot.appendChild(planningList);
+
+  const planningEmpty = createNode('div');
+  planningEmpty.setAttribute('data-rail-planning-files-empty', '');
+  planningRoot.appendChild(planningEmpty);
 
   const recent = createNode('button');
   recent.setAttribute('data-recent-files-sort-option', 'recent');
@@ -203,12 +228,24 @@ function createHarness() {
   relative.appendChild(relativeLabel);
   relative.appendChild(relativeArrow);
 
+  const recentPanel = createNode('div');
+  recentPanel.setAttribute('data-project-rail-panel', 'recent');
+  recentPanel.appendChild(root);
+
+  const planningPanel = createNode('div');
+  planningPanel.setAttribute('data-project-rail-panel', 'planning');
+  planningPanel.hidden = true;
+  planningPanel.appendChild(planningRoot);
+
+  section.appendChild(viewSelect);
   section.appendChild(count);
   section.appendChild(recent);
   section.appendChild(name);
   section.appendChild(relative);
-  section.appendChild(root);
-  body.appendChild(section);
+  section.appendChild(recentPanel);
+  section.appendChild(planningPanel);
+  rail.appendChild(section);
+  body.appendChild(rail);
 
   const listeners = {};
   const document = {
@@ -260,6 +297,31 @@ function createHarness() {
       if (accept.includes('application/json')) {
         const requestUrl = new URL(url, 'http://localhost');
         const sort = requestUrl.searchParams.get('sort') || 'recent:desc';
+        if (requestUrl.pathname.endsWith('/planning-files')) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({
+              files: [
+                {
+                  name: 'NOW.md',
+                  directory: '.planning',
+                  file_path: '.planning/NOW.md',
+                },
+              ],
+            }),
+          });
+        }
+        if (requestUrl.pathname.endsWith('/file-content')) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({
+              file_path: '.planning/NOW.md',
+              is_binary: false,
+              line_count: 2,
+              content: 'first line\nsecond line',
+            }),
+          });
+        }
         return Promise.resolve({
           ok: true,
           json: () => Promise.resolve({ files: [], sort }),
@@ -299,7 +361,21 @@ function createHarness() {
   };
 
   window.window = window;
-  return { window, document, fetchCalls, root, recent, name, relative, count };
+  return {
+    window,
+    document,
+    fetchCalls,
+    rail,
+    root,
+    recent,
+    name,
+    relative,
+    count,
+    viewSelect,
+    planningPanel,
+    planningRoot,
+    planningList,
+  };
 }
 
 describe('recent files sort interaction', function() {
@@ -351,5 +427,104 @@ describe('recent files sort interaction', function() {
     assert.equal(harness.recent.querySelector('.project-rail__sort-label').textContent, 'Recent');
     assert.equal(harness.count.textContent, '0 items');
     assert.equal(harness.fetchCalls.filter((entry) => String(entry.url || '').includes('/recent-files')).length >= 1, true);
+  });
+
+  it('switches the rail body to planning files from the view dropdown', async function() {
+    const harness = createHarness();
+    const script = fs.readFileSync(path.join(__dirname, '..', 'src/public/project-page.js'), 'utf8');
+    const context = vm.createContext({
+      ...harness.window,
+    });
+    context.window = context;
+    context.document = harness.document;
+    context.history = harness.window.history;
+    context.location = harness.window.location;
+    context.fetch = harness.window.fetch;
+    context.localStorage = harness.window.localStorage;
+    context.DOMParser = class {
+      parseFromString() {
+        return { querySelector() { return null; }, body: null, title: '' };
+      }
+    };
+    context.addEventListener = harness.window.addEventListener;
+    context.removeEventListener = harness.window.removeEventListener;
+    context.setTimeout = harness.window.setTimeout;
+    context.clearTimeout = harness.window.clearTimeout;
+    context.matchMedia = harness.window.matchMedia;
+    vm.runInContext(script, context, { filename: 'project-page.js' });
+
+    const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
+
+    assert.equal(harness.rail.getAttribute('data-project-rail-view'), 'recent');
+    assert.equal(harness.planningPanel.hidden, true);
+
+    harness.viewSelect.value = 'planning';
+    harness.document.dispatchEvent({
+      type: 'change',
+      target: harness.viewSelect,
+    });
+    await flush();
+    await flush();
+
+    assert.equal(harness.rail.getAttribute('data-project-rail-view'), 'planning');
+    assert.equal(harness.planningPanel.hidden, false);
+    assert.equal(harness.count.textContent, '1 items');
+    assert.equal(harness.fetchCalls.some((entry) => String(entry.url || '').includes('/planning-files')), true);
+  });
+
+  it('opens a planning file inline in the rail and loads file contents', async function() {
+    const harness = createHarness();
+    const script = fs.readFileSync(path.join(__dirname, '..', 'src/public/project-page.js'), 'utf8');
+    const context = vm.createContext({
+      ...harness.window,
+    });
+    context.window = context;
+    context.document = harness.document;
+    context.history = harness.window.history;
+    context.location = harness.window.location;
+    context.fetch = harness.window.fetch;
+    context.localStorage = harness.window.localStorage;
+    context.DOMParser = class {
+      parseFromString() {
+        return { querySelector() { return null; }, body: null, title: '' };
+      }
+    };
+    context.addEventListener = harness.window.addEventListener;
+    context.removeEventListener = harness.window.removeEventListener;
+    context.setTimeout = harness.window.setTimeout;
+    context.clearTimeout = harness.window.clearTimeout;
+    context.matchMedia = harness.window.matchMedia;
+    vm.runInContext(script, context, { filename: 'project-page.js' });
+
+    const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
+
+    harness.viewSelect.value = 'planning';
+    harness.document.dispatchEvent({
+      type: 'change',
+      target: harness.viewSelect,
+    });
+    await flush();
+    await flush();
+
+    const trigger = harness.planningRoot.querySelector('[data-rail-planning-file-trigger]');
+    assert.ok(trigger);
+
+    harness.document.dispatchEvent({
+      type: 'click',
+      target: trigger,
+      preventDefault() {},
+    });
+    await flush();
+    await flush();
+
+    const body = harness.planningRoot.querySelector('[data-rail-planning-file-body]');
+    assert.ok(body);
+    const lineCodes = body.querySelectorAll('.planning-file-viewer__line-code');
+    assert.equal(lineCodes.length, 2);
+    assert.equal(lineCodes[0].textContent, 'first line');
+    assert.equal(lineCodes[1].textContent, 'second line');
+    assert.equal(harness.fetchCalls.some((entry) => String(entry.url || '').includes('/file-content')), true);
   });
 });

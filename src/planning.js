@@ -3,6 +3,17 @@ const path = require('path');
 
 const PLANNING_DIR = path.join(__dirname, '..', '.planning');
 const PLAYBOOK_ROOT = path.join(__dirname, '..', '..', 'engineering-playbook');
+const PLANNING_DOC_FIELDS = [
+  ['now', 'NOW.md'],
+  ['next', 'NEXT.md'],
+  ['backlog', 'BACKLOG.md'],
+  ['risks', 'RISKS.md'],
+  ['status', 'STATUS.md'],
+  ['todo', 'TODO.md'],
+  ['decisions', 'DECISIONS.md'],
+  ['log', 'LOG.md'],
+  ['context', 'CONTEXT.md'],
+];
 
 function readDoc(dir, name) {
   try {
@@ -24,7 +35,7 @@ function readPlanningBundle(dir, scope) {
   if (!dir) return null;
   if (!fs.existsSync(dir)) return null;
 
-  return {
+  return normalizePlanningBundle({
     scope,
     rootDir: dir,
     now: readDoc(dir, 'NOW.md'),
@@ -36,7 +47,38 @@ function readPlanningBundle(dir, scope) {
     decisions: readDoc(dir, 'DECISIONS.md'),
     log: readDoc(dir, 'LOG.md'),
     context: readDoc(dir, 'CONTEXT.md'),
+  });
+}
+
+function normalizePlanningBundle(bundle = {}) {
+  const raw = bundle && typeof bundle === 'object' ? bundle : {};
+  const normalized = {
+    scope: `${raw.scope || 'project'}`.trim() || 'project',
+    rootDir: `${raw.rootDir || ''}`.trim(),
   };
+
+  for (const [field] of PLANNING_DOC_FIELDS) {
+    normalized[field] = `${raw[field] || ''}`;
+  }
+
+  return normalized;
+}
+
+function createPlanningBundle(scope = 'project', rootDir = '') {
+  return normalizePlanningBundle({ scope, rootDir });
+}
+
+function writePlanningBundle(dir, bundle = {}) {
+  if (!dir) return null;
+  const normalized = normalizePlanningBundle({ ...bundle, rootDir: dir });
+  fs.mkdirSync(dir, { recursive: true });
+
+  for (const [field, fileName] of PLANNING_DOC_FIELDS) {
+    const content = `${normalized[field] || ''}`;
+    fs.writeFileSync(path.join(dir, fileName), content, 'utf8');
+  }
+
+  return normalized;
 }
 
 function readPlaybookBundle(rootDir) {
@@ -139,13 +181,16 @@ function mergeBulletSections(documents, key, heading) {
 
 function loadPlanningContext({
   projectRoot = '',
+  projectBundle = null,
   includeDashboard = true,
   includePlaybook = true,
   playbookRoot = PLAYBOOK_ROOT,
 } = {}) {
   const documents = [];
-  const projectBundle = readPlanningBundle(projectRoot ? path.join(projectRoot, '.planning') : '', 'project');
-  if (projectBundle) documents.push(projectBundle);
+  const resolvedProjectBundle = projectBundle
+    ? normalizePlanningBundle(projectBundle)
+    : readPlanningBundle(projectRoot ? path.join(projectRoot, '.planning') : '', 'project');
+  if (resolvedProjectBundle) documents.push(resolvedProjectBundle);
   if (includeDashboard) {
     const dashboardBundle = readPlanningBundle(PLANNING_DIR, 'dashboard');
     if (dashboardBundle) documents.push(dashboardBundle);
@@ -176,5 +221,10 @@ function loadPlanningContext({
 }
 
 module.exports = {
+  PLANNING_DOC_FIELDS,
+  createPlanningBundle,
   loadPlanningContext,
+  normalizePlanningBundle,
+  readPlanningBundle,
+  writePlanningBundle,
 };

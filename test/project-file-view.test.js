@@ -94,4 +94,22 @@ describe('project file viewer', function() {
     assert.match(html, /alpha/);
     assert.match(html, /beta/);
   });
+
+  it('returns file content as json for inline planning previews', async function() {
+    const port = server.address().port;
+    const response = await fetch(`http://127.0.0.1:${port}/api/project/${project.id}/file-content?path=README.md`, {
+      headers: {
+        cookie: 'ops_access_session=acc-file-view',
+        accept: 'application/json',
+      },
+    });
+    const payload = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.file_path, 'README.md');
+    assert.equal(payload.is_binary, false);
+    assert.equal(payload.line_count, 3);
+    assert.match(payload.content, /alpha/);
+    assert.match(payload.content, /beta/);
+  });
 });

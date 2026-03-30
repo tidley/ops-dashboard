@@ -244,4 +244,51 @@ describe('home usage renderer', function() {
     assert.equal(node.getAttribute('data-usage-rendered-range'), '30d');
     assert.equal(updatedLabels.length, 30);
   });
+
+  it('updates the active usage-range button when clicked', function() {
+    const harness = createHarness();
+    const script = fs.readFileSync(path.join(__dirname, '..', 'src/public/home-usage.js'), 'utf8');
+    const context = vm.createContext({
+      ...harness.window,
+    });
+    context.window = context;
+    context.document = harness.document;
+    context.addEventListener = harness.window.addEventListener;
+    context.removeEventListener = harness.window.removeEventListener;
+    vm.runInContext(script, context, { filename: 'home-usage.js' });
+
+    const api = context.OpsDashboardHomeUsage;
+    const panel = harness.document.createElement('section');
+    panel.setAttribute('data-usage-panel', '');
+    panel.setAttribute('data-usage-default-range', '24h');
+
+    const ranges = {};
+    ['24h', '7d', '30d'].forEach((range) => {
+      const button = harness.document.createElement('button');
+      button.className = range === '24h' ? 'chip chip--active' : 'chip';
+      button.setAttribute('data-usage-range', range);
+      button.textContent = range;
+      panel.appendChild(button);
+      ranges[range] = button;
+    });
+
+    const node = harness.document.createElement('div');
+    node.setAttribute('data-usage-chart', '');
+    node.setAttribute('data-usage-series-24h', JSON.stringify([1, 2, 3]));
+    node.setAttribute('data-usage-labels-24h', JSON.stringify(['a', 'b', 'c']));
+    node.setAttribute('data-usage-series-7d', JSON.stringify([4, 5, 6]));
+    node.setAttribute('data-usage-labels-7d', JSON.stringify(['d', 'e', 'f']));
+    node.setAttribute('data-usage-series-30d', JSON.stringify([7, 8, 9]));
+    node.setAttribute('data-usage-labels-30d', JSON.stringify(['g', 'h', 'i']));
+    panel.appendChild(node);
+
+    api.initUsagePanel(panel);
+    ranges['7d'].dispatchEvent({ type: 'click' });
+
+    assert.equal(panel.getAttribute('data-usage-range-selected'), '7d');
+    assert.equal(ranges['24h'].classList.contains('chip--active'), false);
+    assert.equal(ranges['7d'].classList.contains('chip--active'), true);
+    assert.equal(ranges['7d'].getAttribute('aria-selected'), 'true');
+    assert.equal(node.getAttribute('data-usage-rendered-range'), '7d');
+  });
 });

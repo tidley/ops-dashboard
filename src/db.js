@@ -69,6 +69,8 @@ function initDb() {
       openclaw_memory_json TEXT NOT NULL DEFAULT '{}',
       openclaw_bootstrapped_at TEXT DEFAULT '',
       openclaw_last_seen_at TEXT DEFAULT '',
+      ui_cache_json TEXT NOT NULL DEFAULT '{}',
+      ui_cache_updated_at TEXT DEFAULT '',
       updated_at TEXT NOT NULL,
       FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
     );
@@ -199,6 +201,8 @@ function initDb() {
     { name: 'openclaw_memory_json', sql: 'openclaw_memory_json TEXT NOT NULL DEFAULT \'{}\'' },
     { name: 'openclaw_bootstrapped_at', sql: 'openclaw_bootstrapped_at TEXT DEFAULT \'\' ' },
     { name: 'openclaw_last_seen_at', sql: 'openclaw_last_seen_at TEXT DEFAULT \'\' ' },
+    { name: 'ui_cache_json', sql: 'ui_cache_json TEXT NOT NULL DEFAULT \'{}\'' },
+    { name: 'ui_cache_updated_at', sql: 'ui_cache_updated_at TEXT DEFAULT \'\'' },
   ]);
 }
 

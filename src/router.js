@@ -208,7 +208,6 @@ function summarizeProjectMemory(projectMemory = {}) {
   const recentWorkflows = Array.isArray(projectMemory.recentWorkflows) ? projectMemory.recentWorkflows : [];
   const recentLogs = Array.isArray(projectMemory.recentLogs) ? projectMemory.recentLogs : [];
   const recentArtifacts = Array.isArray(projectMemory.recentArtifacts) ? projectMemory.recentArtifacts : [];
-  const recentMessages = Array.isArray(projectMemory.recentMessages) ? projectMemory.recentMessages : [];
 
   if (Object.keys(state).length) {
     sections.push([
@@ -229,10 +228,6 @@ function summarizeProjectMemory(projectMemory = {}) {
     sections.push(`Recent workflows:\n${recentWorkflows.slice(0, 5).map(workflow => `- ${workflow.id} | ${workflow.name} | ${workflow.state}`).join('\n')}`);
   }
 
-  if (recentMessages.length) {
-    sections.push(`Recent messages:\n${recentMessages.slice(0, 8).map(message => `- ${message.direction} | ${message.message_type} | ${message.content || '(empty)'}`).join('\n')}`);
-  }
-
   if (recentLogs.length) {
     sections.push(`Recent logs:\n${recentLogs.slice(0, 5).map(log => `- ${log.level} | ${log.event_type} | ${log.message}`).join('\n')}`);
   }
@@ -247,7 +242,7 @@ function summarizeProjectMemory(projectMemory = {}) {
 function summarizePlanningDocs(docs = []) {
   return (Array.isArray(docs) ? docs : []).map(doc => {
     const scope = `${doc?.scope || 'planning'}`.trim();
-    const text = `${doc?.text || ''}`.trim();
+    const text = clampPromptText(`${doc?.text || ''}`.trim(), 1200);
     if (!text) return '';
     return `## [${scope}]\n${text}`;
   }).filter(Boolean).join('\n\n');
