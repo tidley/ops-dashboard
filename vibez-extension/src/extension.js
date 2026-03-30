@@ -281,6 +281,7 @@ class VibezController {
       : Boolean(getConfiguration().get('switch.restoreTerminal', true));
 
     const tmuxState = await this.ensureProjectTmux(resolvedPath);
+    const canRestoreTerminal = Boolean(restoreTerminal && tmuxState.ok && getConfiguration().get('tmux.enabled', true));
     if (!tmuxState.ok) {
       vscode.window.showWarningMessage(`Vibez could not prepare tmux for ${path.basename(resolvedPath)}: ${tmuxState.error}`);
     }
@@ -292,7 +293,7 @@ class VibezController {
     await setPendingSwitch(this.context, {
       projectPath: resolvedPath,
       requestedAt: new Date().toISOString(),
-      restoreTerminal,
+      restoreTerminal: canRestoreTerminal,
       tmuxSessionName: tmuxState.tmuxSessionName || recentState.tmuxSessionName || '',
     });
 

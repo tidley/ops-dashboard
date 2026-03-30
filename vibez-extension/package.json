@@ -83,6 +83,6 @@
     }
   },
   "scripts": {
-    "lint": "node -e \"require('./src/extension')\""
+    "lint": "node --check src/model.js && node --check src/git.js && node --check src/storage.js && node --check src/tmux.js && node --check src/extension.js"
   }
 }
