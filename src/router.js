@@ -323,7 +323,7 @@ function buildOpenClawPrompt({ agent, envelope, project, projectState, planning,
     planning.playbook.reliabilityReview ? `### Reliability review\n${planning.playbook.reliabilityReview.trim()}` : '',
   ].filter(Boolean).join('\n\n') : '';
   const promptSections = [
-    'Read OPENCLAW_BOOTSTRAP.md in the repository root before responding.',
+    'Read .planning/BOOTSTRAP.md before responding.',
     '',
     stringifyPromptSection('Agent', [
       `Name: ${agent?.name || 'OpenClaw'}`,

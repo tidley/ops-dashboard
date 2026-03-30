@@ -26,6 +26,8 @@ describe('project ui cache', function() {
     repoDir = path.join(tmpDir, 'repo');
     fs.mkdirSync(path.join(repoDir, '.planning'), { recursive: true });
     fs.writeFileSync(path.join(repoDir, '.planning', 'NOW.md'), '# now\n');
+    fs.mkdirSync(path.join(repoDir, 'src'), { recursive: true });
+    fs.writeFileSync(path.join(repoDir, 'src', 'index.js'), 'export const ok = true;\n');
 
     delete require.cache[require.resolve('../src/db')];
     delete require.cache[require.resolve('../src/store')];
@@ -145,6 +147,11 @@ describe('project ui cache', function() {
     assert.equal(refreshedResponse.status, 200);
     assert.match(refreshedHtml, /NOW\.md/);
     assert.doesNotMatch(refreshedHtml, /CACHED\.md/);
+    assert.equal(fs.existsSync(path.join(repoDir, '.planning', 'BOOTSTRAP.md')), true);
+    assert.equal(
+      fs.readFileSync(path.join(repoDir, '.planning', 'BOOTSTRAP.md'), 'utf8'),
+      fs.readFileSync(path.join(__dirname, '..', 'BOOTSTRAP.md'), 'utf8'),
+    );
   });
 
   it('uses the db-backed planning bundle and restores markdown files when they are missing', async function() {
@@ -173,6 +180,7 @@ describe('project ui cache', function() {
     const html = await response.text();
 
     assert.equal(response.status, 200);
+    assert.equal(fs.existsSync(path.join(repoDir, '.planning', 'BOOTSTRAP.md')), true);
     assert.equal(fs.existsSync(path.join(repoDir, '.planning', 'NOW.md')), true);
     assert.equal(fs.existsSync(path.join(repoDir, '.planning', 'STATUS.md')), true);
     assert.match(fs.readFileSync(path.join(repoDir, '.planning', 'NOW.md'), 'utf8'), /Cached task/);
@@ -200,7 +208,30 @@ describe('project ui cache', function() {
 
     assert.equal(fs.existsSync(path.join(repoDir, '.planning', 'NOW.md')), true);
     assert.equal(fs.existsSync(path.join(repoDir, '.planning', 'STATUS.md')), true);
+    assert.equal(fs.existsSync(path.join(repoDir, '.planning', 'BOOTSTRAP.md')), true);
     assert.match(fs.readFileSync(path.join(repoDir, '.planning', 'NOW.md'), 'utf8'), /Immediate write/);
     assert.match(fs.readFileSync(path.join(repoDir, '.planning', 'STATUS.md'), 'utf8'), /Mirror immediately/);
+  });
+
+  it('lists repo explorer entries one directory level at a time', async function() {
+    const port = server.address().port;
+    const cookie = 'ops_access_session=acc-ui-cache';
+
+    const rootResponse = await fetch(`http://127.0.0.1:${port}/api/project/${project.id}/repo-tree`, {
+      headers: { cookie, accept: 'application/json' },
+    });
+    const rootJson = await rootResponse.json();
+
+    assert.equal(rootResponse.status, 200);
+    assert.ok(Array.isArray(rootJson.files));
+    assert.equal(rootJson.files.some((file) => file.path === 'src' && file.type === 'directory'), true);
+
+    const srcResponse = await fetch(`http://127.0.0.1:${port}/api/project/${project.id}/repo-tree?dir=src`, {
+      headers: { cookie, accept: 'application/json' },
+    });
+    const srcJson = await srcResponse.json();
+
+    assert.equal(srcResponse.status, 200);
+    assert.equal(srcJson.files.some((file) => file.path === 'src/index.js' && file.type === 'file'), true);
   });
 });

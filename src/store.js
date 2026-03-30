@@ -2,7 +2,11 @@ const fs = require('fs');
 const path = require('path');
 const { v4: uuid } = require('uuid');
 const { db } = require('./db');
-const { normalizePlanningBundle, writePlanningBundle } = require('./planning');
+const {
+  ensurePlanningBootstrapDoc,
+  normalizePlanningBundle,
+  writePlanningBundle,
+} = require('./planning');
 const {
   normalizeAccessRole,
   normalizeAccessScope,
@@ -57,6 +61,7 @@ function schedulePlanningMirrorWrite(projectId, bundle) {
   const flush = () => {
     planningMirrorTimers.delete(projectId);
     writePlanningBundle(planningDir, normalized);
+    ensurePlanningBootstrapDoc(planningDir);
   };
 
   if (PLANNING_WRITE_DEBOUNCE_MS === 0) {
@@ -189,10 +194,26 @@ function buildProjectConversationAgentId(projectId) {
   return `agent-openclaw-project-${projectId}`;
 }
 
+function buildSessionConversationAgentId(projectId, sessionId) {
+  return `agent-openclaw-project-${projectId}-session-${sessionId}`;
+}
+
 function buildProjectConversationAgentName(project) {
   const projectSlug = `${project?.name || project?.id || 'project'}`.trim().slice(0, 24);
   const suffix = `${project?.id || ''}`.trim().slice(-6);
   return `OpenClaw ${projectSlug} ${suffix}`.trim();
+}
+
+function buildSessionConversationAgentName(project, sessionId) {
+  const base = buildProjectConversationAgentName(project);
+  const sessionSuffix = `${sessionId || ''}`.trim().slice(-8);
+  return `${base} ${sessionSuffix}`.trim();
+}
+
+function getBaseConversationAgent(baseAgentId = 'agent-openclaw-main') {
+  return getAgent(baseAgentId)
+    || db.prepare('SELECT * FROM agents WHERE kind=? AND enabled=1 ORDER BY created_at ASC LIMIT 1').get('openclaw')
+    || null;
 }
 
 function ensureProjectConversationAgent(projectId, baseAgentId = 'agent-openclaw-main') {
@@ -203,8 +224,7 @@ function ensureProjectConversationAgent(projectId, baseAgentId = 'agent-openclaw
   const project = getProject(projectId);
   if (!project) return null;
 
-  const baseAgent = getAgent(baseAgentId)
-    || db.prepare('SELECT * FROM agents WHERE kind=? AND enabled=1 ORDER BY created_at ASC LIMIT 1').get('openclaw');
+  const baseAgent = getBaseConversationAgent(baseAgentId);
   const baseConfig = parseJson(baseAgent?.config_json, {
     agent_id: 'main',
     local: true,
@@ -242,7 +262,43 @@ function ensureProjectConversationAgent(projectId, baseAgentId = 'agent-openclaw
 function ensureSessionConversationAgent(projectId, sessionId, baseAgentId = 'agent-openclaw-main') {
   const session = `${sessionId || ''}`.trim();
   if (!session) return null;
-  return ensureProjectConversationAgent(projectId, baseAgentId);
+  const agentId = buildSessionConversationAgentId(projectId, session);
+  const existing = getAgent(agentId);
+  if (existing) return existing;
+
+  const project = getProject(projectId);
+  if (!project) return null;
+
+  const baseAgent = getBaseConversationAgent(baseAgentId) || ensureProjectConversationAgent(projectId, baseAgentId);
+  const baseConfig = parseJson(baseAgent?.config_json, {
+    agent_id: 'main',
+    local: true,
+    timeout_sec: 90,
+    thinking: 'low',
+  });
+  const t = now();
+  const config = {
+    ...baseConfig,
+    project_id: projectId,
+    project_name: project.name,
+    conversation_subagent: true,
+    conversation_scope: 'session',
+    conversation_session_id: session,
+    created_from_agent_id: baseAgent?.id || baseAgentId || '',
+  };
+
+  db.prepare('INSERT OR IGNORE INTO agents (id,name,role,kind,config_json,enabled,created_at) VALUES (?,?,?,?,?,?,?)')
+    .run(
+      agentId,
+      buildSessionConversationAgentName(project, session),
+      baseAgent?.role || 'conversation',
+      baseAgent?.kind || 'openclaw',
+      JSON.stringify(config),
+      1,
+      t,
+    );
+
+  return getAgent(agentId);
 }
 
 function getProjectState(projectId) {

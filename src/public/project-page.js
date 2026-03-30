@@ -20,6 +20,8 @@
   var planningFilesRequest = null;
   var planningFilesLastSignature = '';
   var railPlanningFilesLastSignature = '';
+  var repoTreeRequests = new Map();
+  var repoTreeRootLastSignature = '';
   var planningFileContentRequests = new Map();
   var projectRailResizePointerId = null;
   var projectRailResizeStartX = 0;
@@ -81,8 +83,14 @@
     return rail.querySelector('[data-rail-planning-files-root]');
   }
 
+  function getRailRepoRoot() {
+    var rail = getProjectRailRoot();
+    if (!rail || typeof rail.querySelector !== 'function') return null;
+    return rail.querySelector('[data-rail-repo-root]');
+  }
+
   function getProjectFileContentBaseUrl() {
-    var root = getRailPlanningFilesRoot();
+    var root = getRailPlanningFilesRoot() || getRailRepoRoot();
     return root ? String(root.getAttribute('data-project-file-content-url') || '').trim() : '';
   }
 
@@ -133,6 +141,16 @@
     return root ? root.querySelector('[data-rail-planning-files-empty]') : null;
   }
 
+  function getRailRepoTree() {
+    var root = getRailRepoRoot();
+    return root ? root.querySelector('[data-rail-repo-tree]') : null;
+  }
+
+  function getRailRepoEmptyState() {
+    var root = getRailRepoRoot();
+    return root ? root.querySelector('[data-rail-repo-empty]') : null;
+  }
+
   function getRailPlanningFileItems() {
     var root = getRailPlanningFilesRoot();
     return root ? Array.prototype.slice.call(root.querySelectorAll('[data-rail-planning-file-item]')) : [];
@@ -172,6 +190,17 @@
     return root ? String(root.getAttribute('data-planning-files-url') || '').trim() : '';
   }
 
+  function getRepoTreeUrl(relativeDir) {
+    var root = getRailRepoRoot();
+    if (!root) return '';
+    var endpoint = String(root.getAttribute('data-repo-tree-url') || '').trim();
+    if (!endpoint) return '';
+    var url = new URL(endpoint, window.location.origin);
+    var normalizedDir = String(relativeDir || '').trim();
+    if (normalizedDir) url.searchParams.set('dir', normalizedDir);
+    return url.toString();
+  }
+
   function getProjectRailWidthStorageKey() {
     return 'ops-dashboard.project-rail-width:' + getProjectId();
   }
@@ -185,7 +214,9 @@
   }
 
   function normalizeProjectRailView(value) {
-    return String(value || '').trim().toLowerCase() === 'planning' ? 'planning' : 'recent';
+    var normalized = String(value || '').trim().toLowerCase();
+    if (normalized === 'planning' || normalized === 'repo') return normalized;
+    return 'recent';
   }
 
   function isDesktopProjectLayout() {
@@ -372,7 +403,9 @@
   function getProjectRailStoredCount(view) {
     var root = getProjectRailRoot();
     if (!root) return 0;
-    var attr = view === 'planning' ? 'data-project-rail-planning-count' : 'data-project-rail-recent-count';
+    var attr = 'data-project-rail-recent-count';
+    if (view === 'planning') attr = 'data-project-rail-planning-count';
+    if (view === 'repo') attr = 'data-project-rail-repo-count';
     var raw = Number(root.getAttribute(attr) || 0);
     return Number.isFinite(raw) && raw >= 0 ? raw : 0;
   }
@@ -380,7 +413,9 @@
   function setProjectRailStoredCount(view, count) {
     var root = getProjectRailRoot();
     if (!root) return;
-    var attr = view === 'planning' ? 'data-project-rail-planning-count' : 'data-project-rail-recent-count';
+    var attr = 'data-project-rail-recent-count';
+    if (view === 'planning') attr = 'data-project-rail-planning-count';
+    if (view === 'repo') attr = 'data-project-rail-repo-count';
     root.setAttribute(attr, String(Number(count) || 0));
   }
 
@@ -425,7 +460,7 @@
     var select = getProjectRailViewSelect();
     if (select) {
       select.value = activeView;
-      select.setAttribute('aria-label', activeView === 'planning' ? 'Planning files' : 'Live changes');
+      select.setAttribute('aria-label', activeView === 'planning' ? 'Planning files' : (activeView === 'repo' ? 'Repo' : 'Live changes'));
     }
     setProjectRailPanels(activeView);
     syncProjectRailViewCount(activeView);
@@ -693,6 +728,10 @@
     return request;
   }
 
+  function requestProjectFileContent(filePath) {
+    return requestPlanningFileContent(filePath);
+  }
+
   function buildPlanningFileNode(item) {
     var link = document.createElement('a');
     link.className = 'artifact-item artifact-item--button';
@@ -864,6 +903,306 @@
     setRailPlanningFilesCount(normalized.length);
     setRailPlanningFilesEmpty(false);
     return true;
+  }
+
+  function setRepoTreeCount(count) {
+    setProjectRailStoredCount('repo', count);
+    syncProjectRailViewCount();
+  }
+
+  function setRepoTreeEmpty(empty) {
+    var tree = getRailRepoTree();
+    var emptyState = getRailRepoEmptyState();
+    if (tree) tree.hidden = Boolean(empty);
+    if (emptyState) emptyState.hidden = !empty;
+  }
+
+  function buildRepoTreeNode(item, depth) {
+    var filePath = String(item && item.path ? item.path : '').trim();
+    var fileName = String(item && item.name ? item.name : '').trim() || filePath.split('/').pop() || '(unknown)';
+    var nodeDepth = Number(depth);
+    if (!Number.isFinite(nodeDepth) || nodeDepth < 0) nodeDepth = 0;
+    var isDirectory = String(item && item.type ? item.type : '').trim() === 'directory';
+    var hasChildren = Boolean(item && item.has_children);
+
+    var node = document.createElement('div');
+    node.className = 'repo-tree__node repo-tree__node--' + (isDirectory ? 'directory' : 'file');
+    node.style.setProperty('--repo-depth', String(nodeDepth));
+    node.setAttribute('data-repo-tree-node', '');
+    node.setAttribute('data-repo-path', filePath);
+    node.setAttribute('data-repo-type', isDirectory ? 'directory' : 'file');
+    node.setAttribute('data-repo-depth', String(nodeDepth));
+    node.setAttribute('data-has-children', hasChildren ? 'true' : 'false');
+    if (isDirectory) {
+      node.setAttribute('data-repo-loaded', 'false');
+    }
+
+    var row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'repo-tree__row';
+    row.style.setProperty('--repo-depth', String(nodeDepth));
+    row.setAttribute(isDirectory ? 'data-repo-tree-folder-toggle' : 'data-repo-tree-file-trigger', '');
+    row.setAttribute('aria-expanded', 'false');
+
+    var twistie = document.createElement('span');
+    twistie.className = 'repo-tree__twistie';
+    twistie.setAttribute('aria-hidden', 'true');
+    twistie.textContent = isDirectory && hasChildren ? '▸' : '';
+
+    var icon = document.createElement('span');
+    icon.className = 'repo-tree__icon repo-tree__icon--' + (isDirectory ? 'folder' : 'file');
+    icon.setAttribute('aria-hidden', 'true');
+
+    var label = document.createElement('span');
+    label.className = 'repo-tree__label';
+    label.textContent = fileName;
+
+    var modified = document.createElement('span');
+    modified.className = 'repo-tree__modified';
+    modified.textContent = item && item.updated_at ? formatRelativeTime(item.updated_at) : '';
+
+    row.appendChild(twistie);
+    row.appendChild(icon);
+    row.appendChild(label);
+    row.appendChild(modified);
+    node.appendChild(row);
+
+    if (isDirectory) {
+      var children = document.createElement('div');
+      children.className = 'repo-tree__children';
+      children.setAttribute('data-repo-tree-children', '');
+      children.hidden = true;
+      node.appendChild(children);
+      return node;
+    }
+
+    var detail = document.createElement('div');
+    detail.className = 'repo-tree__detail';
+    detail.setAttribute('data-repo-tree-file-detail', '');
+    detail.setAttribute('aria-hidden', 'true');
+    detail.style.maxHeight = '0px';
+
+    var panel = document.createElement('div');
+    panel.className = 'recent-file-item__detail-panel';
+
+    var head = document.createElement('div');
+    head.className = 'recent-file-item__detail-head';
+
+    var pathNode = document.createElement('code');
+    pathNode.className = 'recent-file-item__detail-path recent-file-item__detail-path--full';
+    pathNode.textContent = filePath;
+
+    var openLink = document.createElement('a');
+    openLink.className = 'btn recent-file-item__open-file-btn';
+    openLink.href = buildRecentFileViewerUrl(filePath);
+    openLink.target = '_blank';
+    openLink.rel = 'noopener noreferrer';
+    openLink.setAttribute('aria-label', 'Open full file');
+    openLink.title = 'Open full file';
+    openLink.textContent = '↗';
+
+    head.appendChild(pathNode);
+    head.appendChild(openLink);
+
+    var body = document.createElement('div');
+    body.className = 'recent-file-item__detail-body recent-file-item__detail-body--file';
+    body.setAttribute('data-repo-tree-file-body', '');
+    var loading = document.createElement('div');
+    loading.className = 'recent-file-item__detail-loading';
+    loading.textContent = 'Click to load file contents.';
+    body.appendChild(loading);
+
+    panel.appendChild(head);
+    panel.appendChild(body);
+    detail.appendChild(panel);
+    node.appendChild(detail);
+    return node;
+  }
+
+  function renderRepoTreeChildren(container, items, depth) {
+    if (!container) return;
+    container.innerHTML = '';
+    var fragment = document.createDocumentFragment();
+    (Array.isArray(items) ? items : []).forEach(function(item) {
+      fragment.appendChild(buildRepoTreeNode(item, depth));
+    });
+    container.appendChild(fragment);
+  }
+
+  function renderRailRepoTreeRoot(items) {
+    var tree = getRailRepoTree();
+    if (!tree) return false;
+
+    var normalized = Array.isArray(items) ? items.slice() : [];
+    var signature = JSON.stringify(normalized);
+    if (signature === repoTreeRootLastSignature) return false;
+    repoTreeRootLastSignature = signature;
+
+    tree.innerHTML = '';
+    if (!normalized.length) {
+      setRepoTreeCount(0);
+      setRepoTreeEmpty(true);
+      return true;
+    }
+
+    renderRepoTreeChildren(tree, normalized, 0);
+    setRepoTreeCount(normalized.length);
+    setRepoTreeEmpty(false);
+    return true;
+  }
+
+  function requestRepoTreeData(relativeDir) {
+    var key = String(relativeDir || '').trim();
+    if (repoTreeRequests.has(key)) return repoTreeRequests.get(key);
+
+    var url = getRepoTreeUrl(key);
+    if (!url) return Promise.reject(new Error('repo_tree_url_missing'));
+
+    var request = fetch(url, {
+      headers: { Accept: 'application/json' },
+      credentials: 'same-origin',
+      cache: 'no-store',
+    })
+      .then(function(res) {
+        if (!res.ok) throw new Error('repo_tree_request_failed');
+        return res.json();
+      })
+      .finally(function() {
+        repoTreeRequests.delete(key);
+      });
+
+    repoTreeRequests.set(key, request);
+    return request;
+  }
+
+  function refreshRepoTree(force) {
+    if (!force && repoTreeRequests.has('')) return repoTreeRequests.get('');
+    return requestRepoTreeData('')
+      .then(function(data) {
+        renderRailRepoTreeRoot(data && Array.isArray(data.files) ? data.files : []);
+        return data;
+      })
+      .catch(function(err) {
+        console.error('repo tree refresh failed', err);
+        throw err;
+      });
+  }
+
+  function getRepoTreeFileNodes() {
+    var root = getRailRepoRoot();
+    return root ? Array.prototype.slice.call(root.querySelectorAll('[data-repo-tree-file-trigger]')) : [];
+  }
+
+  function clearRepoTreeFileSelection() {
+    getRepoTreeFileNodes().forEach(function(trigger) {
+      var item = typeof trigger.closest === 'function' ? trigger.closest('[data-repo-tree-node]') : null;
+      if (!item) return;
+      item.classList.remove('is-selected');
+      trigger.setAttribute('aria-expanded', 'false');
+      var detail = item.querySelector('[data-repo-tree-file-detail]');
+      if (!detail) return;
+      detail.classList.remove('is-open');
+      detail.setAttribute('aria-hidden', 'true');
+      detail.style.maxHeight = '0px';
+    });
+  }
+
+  function setRepoTreeFileOpen(item, open) {
+    if (!item) return;
+    var trigger = item.querySelector('[data-repo-tree-file-trigger]');
+    var detail = item.querySelector('[data-repo-tree-file-detail]');
+    if (!trigger || !detail) return;
+    item.classList.toggle('is-selected', Boolean(open));
+    trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
+    detail.classList.toggle('is-open', Boolean(open));
+    detail.setAttribute('aria-hidden', open ? 'false' : 'true');
+    detail.style.maxHeight = open ? (detail.scrollHeight + 'px') : '0px';
+  }
+
+  function toggleRepoTreeFolder(button) {
+    if (!button) return;
+    var item = typeof button.closest === 'function' ? button.closest('[data-repo-tree-node]') : null;
+    if (!item) return;
+    var children = item.querySelector('[data-repo-tree-children]');
+    var twistie = item.querySelector('.repo-tree__twistie');
+    var hasChildren = item.getAttribute('data-has-children') === 'true';
+    if (!children) return;
+
+    var isOpen = button.getAttribute('aria-expanded') === 'true';
+    if (isOpen) {
+      button.setAttribute('aria-expanded', 'false');
+      item.classList.remove('is-expanded');
+      children.hidden = true;
+      if (twistie) twistie.textContent = hasChildren ? '▸' : '';
+      return;
+    }
+
+    button.setAttribute('aria-expanded', 'true');
+    item.classList.add('is-expanded');
+    children.hidden = false;
+    if (twistie) twistie.textContent = hasChildren ? '▾' : '';
+
+    if (item.getAttribute('data-repo-loaded') === 'true' || !hasChildren) return;
+
+    children.innerHTML = '';
+    var loading = document.createElement('div');
+    loading.className = 'repo-tree__loading';
+    loading.style.setProperty('--repo-depth', String(Number(item.getAttribute('data-repo-depth') || 0) + 1));
+    loading.textContent = 'Loading...';
+    children.appendChild(loading);
+
+    requestRepoTreeData(item.getAttribute('data-repo-path') || '')
+      .then(function(data) {
+        var depth = Number(item.getAttribute('data-repo-depth') || 0) + 1;
+        renderRepoTreeChildren(children, data && Array.isArray(data.files) ? data.files : [], depth);
+        item.setAttribute('data-repo-loaded', 'true');
+      })
+      .catch(function() {
+        children.innerHTML = '';
+        var error = document.createElement('div');
+        error.className = 'repo-tree__loading repo-tree__loading--error';
+        error.style.setProperty('--repo-depth', String(Number(item.getAttribute('data-repo-depth') || 0) + 1));
+        error.textContent = 'Unable to load folder.';
+        children.appendChild(error);
+      });
+  }
+
+  function openRepoTreeFile(button) {
+    if (!button) return;
+    var item = typeof button.closest === 'function' ? button.closest('[data-repo-tree-node]') : null;
+    if (!item) return;
+    var detail = item.querySelector('[data-repo-tree-file-detail]');
+    var body = item.querySelector('[data-repo-tree-file-body]');
+    var selected = item.classList.contains('is-selected') && detail && detail.classList.contains('is-open');
+    if (selected) {
+      clearRepoTreeFileSelection();
+      return;
+    }
+
+    clearRepoTreeFileSelection();
+    setRepoTreeFileOpen(item, true);
+
+    if (!body || body.getAttribute('data-file-loaded') === 'true') return;
+    body.innerHTML = '';
+    var loading = document.createElement('div');
+    loading.className = 'recent-file-item__detail-loading';
+    loading.textContent = 'Loading file contents...';
+    body.appendChild(loading);
+
+    requestProjectFileContent(item.getAttribute('data-repo-path') || '')
+      .then(function(data) {
+        renderPlanningFileContentBody(body, data);
+        body.setAttribute('data-file-loaded', 'true');
+        setRepoTreeFileOpen(item, true);
+      })
+      .catch(function() {
+        body.innerHTML = '';
+        var error = document.createElement('div');
+        error.className = 'recent-file-item__detail-loading recent-file-item__detail-loading--error';
+        error.textContent = 'Unable to load file contents.';
+        body.appendChild(error);
+        setRepoTreeFileOpen(item, true);
+      });
   }
 
   function createRecentFileItem(item, index) {
@@ -2223,6 +2562,20 @@
       return;
     }
 
+    var repoFolderToggle = e.target.closest('[data-repo-tree-folder-toggle]');
+    if (repoFolderToggle) {
+      e.preventDefault();
+      toggleRepoTreeFolder(repoFolderToggle);
+      return;
+    }
+
+    var repoFileTrigger = e.target.closest('[data-repo-tree-file-trigger]');
+    if (repoFileTrigger) {
+      e.preventDefault();
+      openRepoTreeFile(repoFileTrigger);
+      return;
+    }
+
     var sidebarToggle = e.target.closest('[data-sidebar-toggle]');
     if (sidebarToggle) {
       e.preventDefault();
@@ -2272,6 +2625,10 @@
     var nextView = setProjectRailView(railViewSelect.value, true);
     if (nextView === 'planning') {
       refreshPlanningFiles(true).catch(function() {});
+      return;
+    }
+    if (nextView === 'repo') {
+      refreshRepoTree(true).catch(function() {});
       return;
     }
     refreshRecentFiles(true);
@@ -2336,6 +2693,7 @@
     setRecentFilesSort(readRecentFilesSort(), false);
     refreshRecentFiles(true);
     refreshPlanningFiles(true).catch(function() {});
+    refreshRepoTree(true).catch(function() {});
     prefetchProjectTabs();
     if (hasProjectId()) {
       bindPolling();

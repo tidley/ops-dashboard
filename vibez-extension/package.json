@@ -1,0 +1,88 @@
+{
+  "name": "vibez",
+  "displayName": "Vibez",
+  "description": "A fast VS Code project switcher with Git Graph-inspired visuals and tmux-backed terminal restore.",
+  "version": "0.0.1",
+  "publisher": "local",
+  "license": "UNLICENSED",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "icon": "media/vibez.svg",
+  "main": "./src/extension.js",
+  "activationEvents": [
+    "onStartupFinished",
+    "onCommand:vibez.open",
+    "onCommand:vibez.pickProject",
+    "onCommand:vibez.pickCodeDirectory",
+    "onCommand:vibez.attachProjectTerminal"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "vibez.open",
+        "title": "Vibez: Open Project Browser"
+      },
+      {
+        "command": "vibez.pickProject",
+        "title": "Vibez: Switch Project"
+      },
+      {
+        "command": "vibez.pickCodeDirectory",
+        "title": "Vibez: Pick Code Directory"
+      },
+      {
+        "command": "vibez.attachProjectTerminal",
+        "title": "Vibez: Attach Project Terminal"
+      }
+    ],
+    "configuration": {
+      "title": "Vibez",
+      "properties": {
+        "vibez.codeDirectory": {
+          "type": "string",
+          "default": "~/code",
+          "description": "Root directory Vibez scans for projects. Immediate child folders are treated as switch targets."
+        },
+        "vibez.recentLimit": {
+          "type": "number",
+          "default": 8,
+          "minimum": 1,
+          "maximum": 20,
+          "description": "Maximum number of recent projects shown ahead of the main list."
+        },
+        "vibez.tmux.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Use tmux sessions to preserve per-project terminal state across workspace switches."
+        },
+        "vibez.tmux.sessionPrefix": {
+          "type": "string",
+          "default": "vibez",
+          "description": "Prefix used when creating tmux sessions for projects."
+        },
+        "vibez.tmux.bootstrapCommand": {
+          "type": "string",
+          "default": "codex",
+          "description": "Command sent to a newly created tmux session before first attach. Leave blank to disable bootstrapping."
+        },
+        "vibez.switch.reuseWindow": {
+          "type": "boolean",
+          "default": true,
+          "description": "Reuse the current VS Code window when switching projects."
+        },
+        "vibez.switch.restoreTerminal": {
+          "type": "boolean",
+          "default": true,
+          "description": "Attach the project's tmux session after the new workspace opens."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "lint": "node -e \"require('./src/extension')\""
+  }
+}

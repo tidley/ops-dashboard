@@ -33,7 +33,7 @@ describe('conversation agent sessions', function() {
     else delete process.env.DB_PATH;
   });
 
-  it('creates one long-lived subagent per project', function() {
+  it('creates a dedicated subagent per chat session', function() {
     const project = store.createProject({
       name: `Conversation Agent Project ${Date.now()}`,
       description: 'Project-specific subagent regression',
@@ -53,18 +53,24 @@ describe('conversation agent sessions', function() {
     assert.ok(agentB, 'expected second session agent');
     assert.ok(agentDirect, 'expected project agent');
     assert.equal(agentA1.id, agentA2.id);
-    assert.equal(agentA1.id, agentB.id);
-    assert.equal(agentA1.id, agentDirect.id);
+    assert.notEqual(agentA1.id, agentB.id);
+    assert.notEqual(agentA1.id, agentDirect.id);
+    assert.notEqual(agentB.id, agentDirect.id);
     assert.equal(agentA1.config_json.conversation_subagent, true);
     assert.equal(agentB.config_json.conversation_subagent, true);
     assert.equal(agentA1.config_json.project_id, project.id);
     assert.equal(agentB.config_json.project_id, project.id);
-    assert.equal(agentA1.config_json.conversation_scope, 'project');
+    assert.equal(agentA1.config_json.conversation_scope, 'session');
+    assert.equal(agentB.config_json.conversation_scope, 'session');
+    assert.equal(agentA1.config_json.conversation_session_id, sessionA.id);
+    assert.equal(agentB.config_json.conversation_session_id, sessionB.id);
+    assert.equal(agentDirect.config_json.conversation_scope, 'project');
 
     const refreshed = store.getProject(project.id);
     const agentIds = refreshed.agents.map((agent) => agent.id);
-    assert.ok(agentIds.includes(agentA1.id));
     assert.ok(agentIds.includes(agentDirect.id));
+    assert.ok(!agentIds.includes(agentA1.id));
+    assert.ok(!agentIds.includes(agentB.id));
   });
 
   it('keeps project agents distinct across projects', function() {

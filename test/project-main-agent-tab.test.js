@@ -286,6 +286,7 @@ describe('project main agent tab', function() {
     assert.match(html, /data-project-rail-view-select/);
     assert.match(html, /<option value="recent">Live changes<\/option>/);
     assert.match(html, /<option value="planning">Planning files<\/option>/);
+    assert.match(html, /<option value="repo">Repo<\/option>/);
     assert.match(html, /data-rail-planning-files-root/);
     assert.match(html, /data-rail-planning-file-trigger/);
     assert.match(html, /data-rail-planning-file-body/);
@@ -781,6 +782,12 @@ describe('project main agent tab', function() {
     assert.match(html, /name="code_folder"/);
     assert.match(html, /name="getting_started"/);
     assert.match(html, /Setup guide/);
+    assert.match(html, /Chat management/);
+    assert.match(html, /Sessions and subagents/);
+    assert.match(html, /Each chat session gets its own dedicated conversation subagent/);
+    assert.match(html, /Project planning context stays shared through the project `.planning` bundle and DB sync/);
+    assert.match(html, /action="\/api\/projects\/proj-settings\/chats\/new"/);
+    assert.match(html, />Start new chat</);
     assert.match(html, /wizard_use_code_folder_btn/);
     assert.match(html, /wizard_fill_instructions_btn/);
     assert.doesNotMatch(html, /name="subfolders"/);

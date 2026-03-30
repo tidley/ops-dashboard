@@ -8,7 +8,9 @@ const store = require('./store');
 const { buildProjectGroups } = require('./sidebar');
 const { routeToAgent, routeToCodex } = require('./router');
 const {
+  BOOTSTRAP_TEMPLATE_PATH,
   createPlanningBundle,
+  ensurePlanningBootstrapDoc,
   loadPlanningContext,
   normalizePlanningBundle,
   readPlanningBundle,
@@ -428,7 +430,7 @@ function buildDashboardUsageStats(projects) {
   };
 }
 
-function resolveConversationAgent(project, mode = 'project') {
+function resolveConversationAgent(project, mode = 'project', sessionId = '') {
   const agents = Array.isArray(project?.agents) ? project.agents : [];
   if (mode === 'main') {
     return store.getAgent('agent-openclaw-main')
@@ -440,7 +442,8 @@ function resolveConversationAgent(project, mode = 'project') {
       || null;
   }
 
-  return store.ensureProjectConversationAgent(project.id)
+  return store.ensureSessionConversationAgent(project.id, sessionId)
+    || store.ensureProjectConversationAgent(project.id)
     || agents.find(a => a.kind === 'openclaw' && a.enabled !== 0)
     || agents.find(a => a.is_default && a.enabled !== 0)
     || agents.find(a => a.enabled !== 0)
@@ -488,6 +491,121 @@ function resolveProjectRoot(project, folderSettings = null) {
   }
 
   return '';
+}
+
+function normalizeRepoBrowserPath(value) {
+  return String(value || '')
+    .trim()
+    .replace(/\\/g, '/')
+    .replace(/^\.\/+/, '')
+    .replace(/^\/+/, '')
+    .replace(/\/+$/, '')
+    .replace(/\/{2,}/g, '/');
+}
+
+function repoPathMatchesPrefix(target, prefix) {
+  const normalizedTarget = normalizeRepoBrowserPath(target);
+  const normalizedPrefix = normalizeRepoBrowserPath(prefix);
+  if (!normalizedTarget || !normalizedPrefix) return false;
+  return normalizedTarget === normalizedPrefix || normalizedTarget.startsWith(`${normalizedPrefix}/`);
+}
+
+function shouldIncludeRepoBrowserEntry(relativePath, isDirectory, folderSettings = null) {
+  const normalizedPath = normalizeRepoBrowserPath(relativePath);
+  if (!normalizedPath) return true;
+  if (repoPathMatchesPrefix(normalizedPath, '.git')) return false;
+
+  const settings = folderSettings || {};
+  const ignoreFolders = normalizeFolderListField(settings.ignoreFolders || []);
+  if (ignoreFolders.some((folder) => repoPathMatchesPrefix(normalizedPath, folder))) {
+    return false;
+  }
+
+  const subfolders = normalizeFolderListField(settings.subfolders || []);
+  if (!subfolders.length) return true;
+
+  if (isDirectory) {
+    return subfolders.some((folder) => (
+      normalizedPath === folder
+      || folder.startsWith(`${normalizedPath}/`)
+      || normalizedPath.startsWith(`${folder}/`)
+    ));
+  }
+
+  return subfolders.some((folder) => (
+    normalizedPath === folder
+    || normalizedPath.startsWith(`${folder}/`)
+  ));
+}
+
+function directoryHasVisibleRepoChildren(absoluteDir, relativeDir, folderSettings = null) {
+  let entries = [];
+  try {
+    entries = fs.readdirSync(absoluteDir, { withFileTypes: true });
+  } catch {
+    return false;
+  }
+
+  return entries.some((entry) => {
+    const childRelativePath = normalizeRepoBrowserPath(path.posix.join(relativeDir || '', entry.name));
+    return shouldIncludeRepoBrowserEntry(childRelativePath, entry.isDirectory(), folderSettings);
+  });
+}
+
+function buildRepoBrowserEntries(project, folderSettings = null, relativeDir = '') {
+  const root = resolveProjectRoot(project, folderSettings);
+  if (!root) return [];
+
+  const normalizedDir = normalizeRepoBrowserPath(relativeDir);
+  const absoluteDir = path.resolve(root, normalizedDir || '.');
+  if (!isPathInsideRoot(root, absoluteDir)) return [];
+
+  let stat = null;
+  try {
+    stat = fs.statSync(absoluteDir);
+  } catch {
+    stat = null;
+  }
+  if (!stat || !stat.isDirectory()) return [];
+
+  let entries = [];
+  try {
+    entries = fs.readdirSync(absoluteDir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+
+  return entries
+    .filter((entry) => entry.isDirectory() || entry.isFile())
+    .map((entry) => {
+      const childRelativePath = normalizeRepoBrowserPath(path.posix.join(normalizedDir || '', entry.name));
+      if (!shouldIncludeRepoBrowserEntry(childRelativePath, entry.isDirectory(), folderSettings)) return null;
+
+      const absolutePath = path.join(absoluteDir, entry.name);
+      let childStat = null;
+      try {
+        childStat = fs.statSync(absolutePath);
+      } catch {
+        childStat = null;
+      }
+
+      return {
+        path: childRelativePath,
+        name: entry.name,
+        type: entry.isDirectory() ? 'directory' : 'file',
+        directory: normalizedDir,
+        updated_at: childStat ? childStat.mtime.toISOString() : '',
+        size_bytes: childStat && entry.isFile() ? childStat.size : 0,
+        has_children: entry.isDirectory()
+          ? directoryHasVisibleRepoChildren(absolutePath, childRelativePath, folderSettings)
+          : false,
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => {
+      if (a.type !== b.type) return a.type === 'directory' ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
 }
 
 function resolveProjectBranch(project, folderSettings = null) {
@@ -1156,11 +1274,13 @@ function syncProjectPlanningBundle(project, folderSettings = null) {
     ? normalizePlanningBundle(cache.projectPlanningBundle)
     : null;
   const planningDir = getProjectPlanningDir(project, folderSettings);
+  if (planningDir) ensurePlanningBootstrapDoc(planningDir, BOOTSTRAP_TEMPLATE_PATH);
   const fileBundle = readProjectPlanningBundle(project, folderSettings);
 
   if (cachedBundle) {
     if (planningDir && (!fileBundle || !signaturesMatch(fileBundle, cachedBundle))) {
       writePlanningBundle(planningDir, cachedBundle);
+      ensurePlanningBootstrapDoc(planningDir, BOOTSTRAP_TEMPLATE_PATH);
     }
     return cachedBundle;
   }
@@ -1307,7 +1427,7 @@ async function processProjectMessage({ projectId, body = {}, acceptHeader = '' }
   const agentBackendSettings = isMainConversation ? null : getResolvedAgentBackend(conversationProject);
   const projectState = store.ensureProjectState(conversationProject.id);
   const session = store.ensureSession(conversationProject.id, sessionId, workflowId || null);
-  const projectConversationAgent = resolveConversationAgent(conversationProject, 'project');
+  const projectConversationAgent = resolveConversationAgent(conversationProject, 'project', session.id);
   const mainConversationAgent = resolveConversationAgent(conversationProject, 'main');
   const agentId = requestedAgentId === 'agent-openclaw-main'
     ? (mainConversationAgent?.id || 'agent-openclaw-main')
@@ -1327,7 +1447,7 @@ async function processProjectMessage({ projectId, body = {}, acceptHeader = '' }
     payload,
     agent_session_id: agentSessionId,
     project_state: projectState,
-    agent_backend: agentBackendSettings.effectiveBackend,
+    agent_backend: agentBackendSettings?.effectiveBackend || 'openclaw-proxy',
     agent_backend_settings: agentBackendSettings,
   };
   const conversationHistory = getOpenClawHistory(conversationProject, session.id);
@@ -1649,7 +1769,7 @@ app.get('/project/:projectId', (req, res) => {
   const projectBackendSettings = getResolvedAgentBackend(project, globalWorkspaceSettings);
   const conversationAgent = activeTab === 'main-agent'
     ? resolveConversationAgent(conversationProject, 'main')
-    : resolveConversationAgent(project, 'project');
+    : resolveConversationAgent(project, 'project', activeSession || '');
   const projectUiCache = getProjectUiCacheSnapshot(project, projectFolderSettings, { recentFileLimit: 25 });
   const projectMemory = buildProjectMemorySnapshot(
     activeTab === 'main-agent' ? conversationProject : project,
@@ -1671,6 +1791,7 @@ app.get('/project/:projectId', (req, res) => {
   const planningFiles = Array.isArray(projectUiCache.planningFiles)
     ? projectUiCache.planningFiles
     : buildPlanningFiles(project, projectFolderSettings);
+  const repoBrowserEntries = buildRepoBrowserEntries(project, projectFolderSettings, '');
   projectMemory.recentFileChanges = recentFileChanges;
   projectMemory.planningFiles = planningFiles;
   const projectSettingsWizard = buildProjectSettingsWizard(project, globalWorkspaceSettings);
@@ -1707,6 +1828,7 @@ app.get('/project/:projectId', (req, res) => {
     recentFileChanges,
     recentFileSort,
     planningFiles,
+    repoBrowserEntries,
     projectUsage,
     projectFolderSettings,
     projectSettingsWizard,
@@ -1843,6 +1965,24 @@ app.post('/api/projects/:projectId/settings', (req, res) => {
 
   const returnTo = `${req.body.return_to || ''}`.trim() || `/project/${req.params.projectId}?tab=settings`;
   res.redirect(returnTo);
+});
+
+app.post('/api/projects/:projectId/chats/new', (req, res) => {
+  const project = store.getProject(req.params.projectId);
+  if (!project) return res.status(404).send('Project not found');
+
+  const session = store.ensureSession(project.id, null, null);
+  store.ensureSessionConversationAgent(project.id, session.id);
+  syncProjectUiState(project, 'conversations', session.id);
+
+  const requestedReturnTo = `${req.body.return_to || ''}`.trim();
+  const baseReturnTo = requestedReturnTo || `/project/${project.id}?tab=conversations`;
+  const separator = baseReturnTo.includes('?') ? '&' : '?';
+  const location = /(?:\?|&)session=/.test(baseReturnTo)
+    ? baseReturnTo
+    : `${baseReturnTo}${separator}session=${encodeURIComponent(session.id)}`;
+
+  res.redirect(location);
 });
 
 app.post('/api/settings', (req, res) => {
@@ -2030,6 +2170,22 @@ app.get('/api/project/:projectId/planning-files', (req, res) => {
 
   return res.json({
     project_id: project.id,
+    refreshed_at: new Date().toISOString(),
+    files,
+  });
+});
+
+app.get('/api/project/:projectId/repo-tree', (req, res) => {
+  const project = store.getProject(req.params.projectId);
+  if (!project) return res.status(404).json({ error: 'project_not_found' });
+
+  const folderSettings = getProjectFolderSettings(project, getGlobalWorkspaceSettings());
+  const directory = normalizeRepoBrowserPath(req.query.dir || '');
+  const files = buildRepoBrowserEntries(project, folderSettings, directory);
+
+  return res.json({
+    project_id: project.id,
+    directory,
     refreshed_at: new Date().toISOString(),
     files,
   });

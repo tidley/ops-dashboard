@@ -33,6 +33,9 @@
   <% const projectPlanningFiles = Array.isArray(typeof planningFiles !== 'undefined' ? planningFiles : null)
        ? planningFiles
        : ((projectMemory && Array.isArray(projectMemory.planningFiles)) ? projectMemory.planningFiles : []); %>
+  <% const projectRepoEntries = Array.isArray(typeof repoBrowserEntries !== 'undefined' ? repoBrowserEntries : null)
+       ? repoBrowserEntries
+       : []; %>
   <% const recentFileSortState = typeof recentFileSort !== 'undefined' && recentFileSort ? String(recentFileSort) : 'recent:desc'; %>
   <% const recentFileSortParts = recentFileSortState.split(':'); %>
   <% const recentFileSortKey = recentFileSortParts[0] || 'recent'; %>
@@ -519,17 +522,12 @@
             </div>
 
             <form method="post" action="/api/project/<%= project.id %>/message" class="chat-composer" id="message_form">
-              <div class="chat-composer__grid">
-                <input type="hidden" id="session_id" name="session_id" value="<%= activeSession || (currentSession ? currentSession.id : '') %>" />
-                <input type="hidden" id="agent_id" name="agent_id" value="<%= conversationAgentId || 'agent-openclaw-main' %>" />
+              <input type="hidden" id="session_id" name="session_id" value="<%= activeSession || (currentSession ? currentSession.id : '') %>" />
+              <input type="hidden" id="agent_id" name="agent_id" value="<%= conversationAgentId || 'agent-openclaw-main' %>" />
 
-                <div class="field field--full">
-                  <textarea id="text" name="text" placeholder="Type your message…" rows="3"></textarea>
-                </div>
-              </div>
-
-              <div class="chat-composer__actions">
-                <button type="submit" class="btn btn-primary" name="message_type" value="prompt">Send</button>
+              <div class="chat-composer__input">
+                <textarea id="text" name="text" placeholder="Type your message…" rows="3"></textarea>
+                <button type="submit" class="btn btn-primary chat-composer__submit" name="message_type" value="prompt">Send</button>
               </div>
             </form>
 
@@ -818,6 +816,33 @@
           <article class="card">
             <div class="card__header">
               <div>
+                <div class="eyebrow">Chat management</div>
+                <h2>Sessions and subagents</h2>
+              </div>
+            </div>
+            <div class="bullet-stack bullet-stack--compact">
+              <div class="bullet-stack__item">Each chat session gets its own dedicated conversation subagent.</div>
+              <div class="bullet-stack__item">Project planning context stays shared through the project `.planning` bundle and DB sync.</div>
+            </div>
+            <form class="actions" method="post" action="/api/projects/<%= project.id %>/chats/new">
+              <input type="hidden" name="return_to" value="/project/<%= project.id %>?tab=conversations" />
+              <button class="btn btn-primary" type="submit">Start new chat</button>
+            </form>
+            <% if ((project.sessions || []).length) { %>
+              <div class="status-list status-list--compact">
+                <% project.sessions.slice(0, 5).forEach(function(session) { %>
+                  <div class="status-row">
+                    <dt><a href="/project/<%= project.id %>?tab=conversations&session=<%= encodeURIComponent(session.id) %>"><%= session.title || session.id %></a></dt>
+                    <dd><%= session.state || 'active' %></dd>
+                  </div>
+                <% }) %>
+              </div>
+            <% } %>
+          </article>
+
+          <article class="card">
+            <div class="card__header">
+              <div>
                 <div class="eyebrow">Agents</div>
                 <h2>Registry</h2>
               </div>
@@ -836,7 +861,7 @@
       <% } %>
         </div>
 
-        <aside class="card project-rail sidebar-section sidebar-section--collapsible" data-project-rail data-project-rail-view="recent" data-project-rail-recent-count="<%= recentFiles.length %>" data-project-rail-planning-count="<%= projectPlanningFiles.length %>" data-sidebar-collapsible data-sidebar-default-collapsed="true" data-sidebar-section-key="workspace-changes">
+        <aside class="card project-rail sidebar-section sidebar-section--collapsible" data-project-rail data-project-rail-view="recent" data-project-rail-recent-count="<%= recentFiles.length %>" data-project-rail-planning-count="<%= projectPlanningFiles.length %>" data-project-rail-repo-count="<%= projectRepoEntries.length %>" data-sidebar-collapsible data-sidebar-default-collapsed="true" data-sidebar-section-key="workspace-changes">
           <button type="button" class="sidebar-collapse-tab project-rail__toggle" data-sidebar-collapse aria-expanded="true" aria-label="Project side panel" title="Project side panel">
             <span class="sidebar-collapse-tab__icon" aria-hidden="true">
               <span></span>
@@ -919,6 +944,7 @@
                       <select class="project-rail__view-select" data-project-rail-view-select aria-label="Side panel view">
                         <option value="recent">Live changes</option>
                         <option value="planning">Planning files</option>
+                        <option value="repo">Repo</option>
                       </select>
                     </label>
                     <div class="project-rail__count" data-project-rail-view-count data-recent-files-count><%= recentFiles.length %> items</div>
@@ -1091,6 +1117,66 @@
                   <div class="empty-state empty-state--compact" data-rail-planning-files-empty <%= projectPlanningFiles.length ? 'hidden' : '' %>>
                     <strong>No planning files yet.</strong>
                     <p>Create a `.planning/` folder in the project root to expose the planning workspace here.</p>
+                  </div>
+                </div>
+
+                <div class="project-rail__panel project-rail__panel--repo" data-project-rail-panel="repo" data-rail-repo-root data-repo-tree-url="/api/project/<%= project.id %>/repo-tree" data-project-file-content-url="/api/project/<%= project.id %>/file-content" hidden>
+                  <div class="repo-tree" data-rail-repo-tree <%= projectRepoEntries.length ? '' : 'hidden' %>>
+                    <% projectRepoEntries.forEach(function(entry) { %>
+                      <% const entryPath = String(entry.path || ''); %>
+                      <% const entryName = String(entry.name || entryPath.split('/').pop() || '(unknown)'); %>
+                      <% const entryDepth = entryPath ? entryPath.split('/').length - 1 : 0; %>
+                      <% const entryIsDirectory = entry.type === 'directory'; %>
+                      <div
+                        class="repo-tree__node repo-tree__node--<%= entryIsDirectory ? 'directory' : 'file' %>"
+                        style="--repo-depth:<%= entryDepth %>;"
+                        data-repo-tree-node
+                        data-repo-path="<%= entryPath %>"
+                        data-repo-type="<%= entry.type %>"
+                        data-repo-depth="<%= entryDepth %>"
+                        data-repo-loaded="<%= entryIsDirectory ? 'false' : '' %>"
+                        data-has-children="<%= entry.has_children ? 'true' : 'false' %>"
+                      >
+                        <button
+                          type="button"
+                          class="repo-tree__row"
+                          style="--repo-depth:<%= entryDepth %>;"
+                          <%= entryIsDirectory ? 'data-repo-tree-folder-toggle' : 'data-repo-tree-file-trigger' %>
+                          aria-expanded="false"
+                        >
+                          <span class="repo-tree__twistie" aria-hidden="true"><%= entryIsDirectory && entry.has_children ? '▸' : '' %></span>
+                          <span class="repo-tree__icon repo-tree__icon--<%= entryIsDirectory ? 'folder' : 'file' %>" aria-hidden="true"></span>
+                          <span class="repo-tree__label"><%= entryName %></span>
+                          <span class="repo-tree__modified"><%= entry.updated_at ? formatRelativeTime(entry.updated_at) : '' %></span>
+                        </button>
+                        <% if (entryIsDirectory) { %>
+                          <div class="repo-tree__children" data-repo-tree-children hidden></div>
+                        <% } else { %>
+                          <div class="repo-tree__detail" data-repo-tree-file-detail aria-hidden="true">
+                            <div class="recent-file-item__detail-panel">
+                              <div class="recent-file-item__detail-head">
+                                <code class="recent-file-item__detail-path recent-file-item__detail-path--full"><%= entryPath %></code>
+                                <a
+                                  class="btn recent-file-item__open-file-btn"
+                                  href="<%= recentFileViewerHref(entryPath) %>"
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  aria-label="Open full file"
+                                  title="Open full file"
+                                >↗</a>
+                              </div>
+                              <div class="recent-file-item__detail-body recent-file-item__detail-body--file" data-repo-tree-file-body>
+                                <div class="recent-file-item__detail-loading">Click to load file contents.</div>
+                              </div>
+                            </div>
+                          </div>
+                        <% } %>
+                      </div>
+                    <% }) %>
+                  </div>
+                  <div class="empty-state empty-state--compact" data-rail-repo-empty <%= projectRepoEntries.length ? 'hidden' : '' %>>
+                    <strong>No repo files exposed.</strong>
+                    <p>The configured project code folder has no visible entries for the current explorer scope.</p>
                   </div>
                 </div>
               </div>

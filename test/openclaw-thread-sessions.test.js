@@ -98,4 +98,32 @@ describe('openclaw thread sessions', function() {
     assert.match(capturedSessionIds[1], /opsdash:/);
     assert.match(capturedSessionIds[1], /agent-openclaw-main/);
   });
+
+  it('uses distinct conversation subagents for different chat sessions in the same project', async function() {
+    const first = await app.processProjectMessage({
+      projectId: project.id,
+      body: {
+        text: 'First project chat thread',
+        message_type: 'prompt',
+        session_id: 'ses-thread-a',
+      },
+      acceptHeader: 'application/json',
+    });
+
+    const second = await app.processProjectMessage({
+      projectId: project.id,
+      body: {
+        text: 'Second project chat thread',
+        message_type: 'prompt',
+        session_id: 'ses-thread-b',
+      },
+      acceptHeader: 'application/json',
+    });
+
+    assert.equal(first.ok, true);
+    assert.equal(second.ok, true);
+    assert.equal(first.body.messages[0].agent_id.includes('ses-thread-a'), true);
+    assert.equal(second.body.messages[0].agent_id.includes('ses-thread-b'), true);
+    assert.notEqual(first.body.messages[0].agent_id, second.body.messages[0].agent_id);
+  });
 });

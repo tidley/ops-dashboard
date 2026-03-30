@@ -1601,9 +1601,10 @@ body[data-active-tab='main-agent'] .project-layout__main {
     grid-column: 1 / -1;
   }
 
-  .project-rail[data-project-rail-view='planning'] .project-rail__sort-row {
-    display: none;
-  }
+.project-rail[data-project-rail-view='planning'] .project-rail__sort-row,
+.project-rail[data-project-rail-view='repo'] .project-rail__sort-row {
+  display: none;
+}
 
   .project-rail__sorts {
     display: grid;
@@ -1958,23 +1959,27 @@ body[data-active-tab='main-agent'] .project-layout__main {
 }
 
 .chat-composer {
-  display: grid;
-  gap: 14px;
+  display: block;
   padding-top: 16px;
   border-top: 1px solid var(--line);
 }
 
-.chat-composer__grid {
-  display: grid;
-  gap: 12px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+.chat-composer__input {
+  position: relative;
 }
 
-.chat-composer__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  justify-content: flex-end;
+.chat-composer__input textarea {
+  min-height: 112px;
+  padding-right: 98px;
+  padding-bottom: 54px;
+}
+
+.chat-composer__submit {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  min-width: 74px;
+  z-index: 1;
 }
 
 .chat-rail {
@@ -2985,6 +2990,142 @@ button.is-busy:hover {
   word-break: break-word;
 }
 
+.repo-tree {
+  display: grid;
+  gap: 2px;
+}
+
+.repo-tree__node {
+  display: grid;
+  gap: 6px;
+}
+
+.repo-tree__row {
+  display: grid;
+  grid-template-columns: 14px 14px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 26px;
+  padding: 4px 8px 4px calc(8px + (var(--repo-depth, 0) * 14px));
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+
+.repo-tree__row:hover {
+  border-color: rgba(152, 162, 179, 0.18);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.repo-tree__node.is-selected > .repo-tree__row,
+.repo-tree__node.is-expanded > .repo-tree__row {
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.repo-tree__twistie {
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1;
+  text-align: center;
+}
+
+.repo-tree__icon {
+  position: relative;
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+}
+
+.repo-tree__icon--folder::before {
+  content: '';
+  position: absolute;
+  inset: 3px 0 0;
+  border: 1px solid #7f96bd;
+  border-radius: 2px;
+  background: rgba(127, 150, 189, 0.08);
+}
+
+.repo-tree__icon--folder::after {
+  content: '';
+  position: absolute;
+  left: 1px;
+  top: 1px;
+  width: 6px;
+  height: 3px;
+  border: 1px solid #7f96bd;
+  border-bottom: 0;
+  border-radius: 2px 2px 0 0;
+  background: rgba(127, 150, 189, 0.08);
+}
+
+.repo-tree__icon--file::before {
+  content: '';
+  position: absolute;
+  inset: 0 1px 0 2px;
+  border: 1px solid #8fa0bf;
+  border-radius: 2px;
+  background: rgba(143, 160, 191, 0.06);
+}
+
+.repo-tree__icon--file::after {
+  content: '';
+  position: absolute;
+  right: 1px;
+  top: 1px;
+  width: 4px;
+  height: 4px;
+  border-top: 1px solid #8fa0bf;
+  border-right: 1px solid #8fa0bf;
+  background: var(--bg-1);
+  clip-path: polygon(0 0, 100% 0, 100% 100%);
+}
+
+.repo-tree__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.88rem;
+}
+
+.repo-tree__modified {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.repo-tree__children {
+  display: grid;
+  gap: 2px;
+}
+
+.repo-tree__detail {
+  overflow: hidden;
+  max-height: 0;
+  transition: max-height 160ms ease;
+}
+
+.repo-tree__detail.is-open {
+  margin-left: calc(22px + (var(--repo-depth, 0) * 14px));
+}
+
+.repo-tree__loading {
+  padding: 6px 10px 8px calc(22px + (var(--repo-depth, 0) * 14px));
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+}
+
+.repo-tree__loading--error {
+  color: #ff9a9a;
+}
+
 .recent-file-diff-line {
   display: block;
   white-space: pre-wrap;
@@ -3189,10 +3330,6 @@ button.is-busy:hover {
   }
 
   .openclaw-control__layout {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .chat-composer__grid {
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -3435,6 +3572,17 @@ button.is-busy:hover {
     padding-top: 12px;
     padding-bottom: calc(12px + env(safe-area-inset-bottom));
     background: var(--bg-0);
+  }
+
+  .chat-composer__input textarea {
+    min-height: 104px;
+    padding-right: 90px;
+  }
+
+  .chat-composer__submit {
+    right: 8px;
+    bottom: 8px;
+    min-width: 70px;
   }
 
   .chat-panel,

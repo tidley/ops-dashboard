@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 const PLANNING_DIR = path.join(__dirname, '..', '.planning');
+const BOOTSTRAP_TEMPLATE_PATH = path.join(__dirname, '..', 'BOOTSTRAP.md');
 const PLAYBOOK_ROOT = path.join(__dirname, '..', '..', 'engineering-playbook');
 const PLANNING_DOC_FIELDS = [
   ['now', 'NOW.md'],
@@ -79,6 +80,20 @@ function writePlanningBundle(dir, bundle = {}) {
   }
 
   return normalized;
+}
+
+function ensurePlanningBootstrapDoc(dir, templatePath = BOOTSTRAP_TEMPLATE_PATH) {
+  if (!dir) return '';
+
+  const targetPath = path.join(dir, 'BOOTSTRAP.md');
+  if (fs.existsSync(targetPath)) return targetPath;
+
+  const template = readTextFile(templatePath);
+  if (!template.trim()) return '';
+
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(targetPath, template, 'utf8');
+  return targetPath;
 }
 
 function readPlaybookBundle(rootDir) {
@@ -221,8 +236,10 @@ function loadPlanningContext({
 }
 
 module.exports = {
+  BOOTSTRAP_TEMPLATE_PATH,
   PLANNING_DOC_FIELDS,
   createPlanningBundle,
+  ensurePlanningBootstrapDoc,
   loadPlanningContext,
   normalizePlanningBundle,
   readPlanningBundle,

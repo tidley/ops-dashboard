@@ -161,6 +161,10 @@ function createNode(tagName) {
 
 function createHarness() {
   const body = createNode('body');
+  body.style = {
+    setProperty() {},
+    removeProperty() {},
+  };
   body.classList = {
     toggle() {},
     contains() { return false; },

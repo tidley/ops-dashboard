@@ -141,7 +141,7 @@ describe('openclaw project bootstrap', function() {
     assert.equal(routed.toolOutput.response.captured.sessionId, runtime.openclaw_session_id);
     assert.equal(capturedExec.command, fakeBin);
     assert.ok(Array.isArray(capturedExec.args));
-    assert.match(routed.toolOutput.response.captured.message, /OPENCLAW_BOOTSTRAP\.md/);
+    assert.match(routed.toolOutput.response.captured.message, /\.planning\/BOOTSTRAP\.md/);
     assert.doesNotMatch(routed.toolOutput.response.captured.message, /You are OpenClaw running locally for the current project only\./);
     assert.match(routed.toolOutput.response.captured.message, /Conversation history/);
     assert.match(routed.toolOutput.response.captured.message, /Earlier request/);

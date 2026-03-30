@@ -154,6 +154,7 @@ function createHarness() {
   rail.setAttribute('data-project-rail-view', 'recent');
   rail.setAttribute('data-project-rail-recent-count', '0');
   rail.setAttribute('data-project-rail-planning-count', '1');
+  rail.setAttribute('data-project-rail-repo-count', '2');
 
   const section = createNode('div');
   section.className = 'project-rail__section';
@@ -237,6 +238,25 @@ function createHarness() {
   planningPanel.hidden = true;
   planningPanel.appendChild(planningRoot);
 
+  const repoRoot = createNode('div');
+  repoRoot.setAttribute('data-rail-repo-root', '');
+  repoRoot.setAttribute('data-repo-tree-url', '/api/project/proj-sort/repo-tree');
+  repoRoot.setAttribute('data-project-file-content-url', '/api/project/proj-sort/file-content');
+  repoRoot.hidden = true;
+
+  const repoTree = createNode('div');
+  repoTree.setAttribute('data-rail-repo-tree', '');
+  repoRoot.appendChild(repoTree);
+
+  const repoEmpty = createNode('div');
+  repoEmpty.setAttribute('data-rail-repo-empty', '');
+  repoRoot.appendChild(repoEmpty);
+
+  const repoPanel = createNode('div');
+  repoPanel.setAttribute('data-project-rail-panel', 'repo');
+  repoPanel.hidden = true;
+  repoPanel.appendChild(repoRoot);
+
   section.appendChild(viewSelect);
   section.appendChild(count);
   section.appendChild(recent);
@@ -244,6 +264,7 @@ function createHarness() {
   section.appendChild(relative);
   section.appendChild(recentPanel);
   section.appendChild(planningPanel);
+  section.appendChild(repoPanel);
   rail.appendChild(section);
   body.appendChild(rail);
 
@@ -311,11 +332,49 @@ function createHarness() {
             }),
           });
         }
-        if (requestUrl.pathname.endsWith('/file-content')) {
+        if (requestUrl.pathname.endsWith('/repo-tree')) {
+          const dir = requestUrl.searchParams.get('dir') || '';
+          if (dir === 'src') {
+            return Promise.resolve({
+              ok: true,
+              json: () => Promise.resolve({
+                files: [
+                  {
+                    name: 'project-page.js',
+                    path: 'src/project-page.js',
+                    type: 'file',
+                    has_children: false,
+                  },
+                ],
+              }),
+            });
+          }
           return Promise.resolve({
             ok: true,
             json: () => Promise.resolve({
-              file_path: '.planning/NOW.md',
+              files: [
+                {
+                  name: 'src',
+                  path: 'src',
+                  type: 'directory',
+                  has_children: true,
+                },
+                {
+                  name: 'README.md',
+                  path: 'README.md',
+                  type: 'file',
+                  has_children: false,
+                },
+              ],
+            }),
+          });
+        }
+        if (requestUrl.pathname.endsWith('/file-content')) {
+          const filePath = requestUrl.searchParams.get('path') || '';
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({
+              file_path: filePath || '.planning/NOW.md',
               is_binary: false,
               line_count: 2,
               content: 'first line\nsecond line',
@@ -375,6 +434,9 @@ function createHarness() {
     planningPanel,
     planningRoot,
     planningList,
+    repoPanel,
+    repoRoot,
+    repoTree,
   };
 }
 
@@ -526,5 +588,75 @@ describe('recent files sort interaction', function() {
     assert.equal(lineCodes[0].textContent, 'first line');
     assert.equal(lineCodes[1].textContent, 'second line');
     assert.equal(harness.fetchCalls.some((entry) => String(entry.url || '').includes('/file-content')), true);
+  });
+
+  it('switches the rail body to repo explorer from the view dropdown and opens nested files', async function() {
+    const harness = createHarness();
+    const script = fs.readFileSync(path.join(__dirname, '..', 'src/public/project-page.js'), 'utf8');
+    const context = vm.createContext({
+      ...harness.window,
+    });
+    context.window = context;
+    context.document = harness.document;
+    context.history = harness.window.history;
+    context.location = harness.window.location;
+    context.fetch = harness.window.fetch;
+    context.localStorage = harness.window.localStorage;
+    context.DOMParser = class {
+      parseFromString() {
+        return { querySelector() { return null; }, body: null, title: '' };
+      }
+    };
+    context.addEventListener = harness.window.addEventListener;
+    context.removeEventListener = harness.window.removeEventListener;
+    context.setTimeout = harness.window.setTimeout;
+    context.clearTimeout = harness.window.clearTimeout;
+    context.matchMedia = harness.window.matchMedia;
+    vm.runInContext(script, context, { filename: 'project-page.js' });
+
+    const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
+    await flush();
+
+    harness.viewSelect.value = 'repo';
+    harness.document.dispatchEvent({
+      type: 'change',
+      target: harness.viewSelect,
+    });
+    await flush();
+    await flush();
+
+    assert.equal(harness.rail.getAttribute('data-project-rail-view'), 'repo');
+    assert.equal(harness.repoPanel.hidden, false);
+    assert.equal(harness.fetchCalls.some((entry) => String(entry.url || '').includes('/repo-tree')), true);
+
+    const folderTrigger = harness.repoRoot.querySelector('[data-repo-tree-folder-toggle]');
+    assert.ok(folderTrigger);
+    harness.document.dispatchEvent({
+      type: 'click',
+      target: folderTrigger,
+      preventDefault() {},
+    });
+    await flush();
+    await flush();
+
+    assert.equal(harness.fetchCalls.some((entry) => String(entry.url || '').includes('/repo-tree?dir=src')), true);
+
+    const fileTrigger = harness.repoRoot.querySelector('[data-repo-tree-file-trigger]');
+    assert.ok(fileTrigger);
+    harness.document.dispatchEvent({
+      type: 'click',
+      target: fileTrigger,
+      preventDefault() {},
+    });
+    await flush();
+    await flush();
+
+    const body = harness.repoRoot.querySelector('[data-repo-tree-file-body]');
+    assert.ok(body);
+    const lineCodes = body.querySelectorAll('.planning-file-viewer__line-code');
+    assert.equal(lineCodes.length, 2);
+    assert.equal(lineCodes[0].textContent, 'first line');
+    assert.equal(harness.fetchCalls.some((entry) => String(entry.url || '').includes('/file-content?path=src%2Fproject-page.js')), true);
   });
 });
