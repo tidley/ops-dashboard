@@ -173,10 +173,14 @@ describe('http auth guard', function() {
       },
     };
     const res = createMockRes();
+    const before = store.getAccessSession(session.id);
 
     middleware(req, res, () => { called = true; });
+    const after = store.getAccessSession(session.id);
 
     assert.equal(called, true);
     assert.equal(req.accessSession.id, session.id);
+    assert.ok(after.expires_at > before.expires_at, 'expected access session expiry to refresh');
+    assert.ok(after.last_seen_at >= before.last_seen_at, 'expected last_seen_at to refresh');
   });
 });

@@ -11,7 +11,7 @@
    - NIP-17 relay / STUN / WebRTC access flow guidance
    - trusted proxy handling
 
-3. Control-surface polish
-   - refine OpenClaw control stats and restart/model actions
-   - tighten the home-page summary and project overview cards
-   - keep the flat dark theme consistent across new screens
+3. Transport and compliance notes
+   - document the STUN-only / no-TURN stance clearly
+   - call out FIPS boundaries and what still needs validation
+   - keep the holepunching path front-and-center for remote access

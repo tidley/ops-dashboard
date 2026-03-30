@@ -97,6 +97,10 @@ describe('project main agent tab', function() {
       projectMemory: {
         recentArtifacts: [],
       },
+      projectBackendSettings: {
+        effectiveBackend: 'openclaw-proxy',
+        source: 'global',
+      },
       mainAgent: {
         id: 'agent-openclaw-main',
         name: 'OpenClaw Main',
@@ -133,6 +137,7 @@ describe('project main agent tab', function() {
     assert.match(html, /data-active-tab="main-agent"/);
     assert.match(html, /OpenClaw Main/);
     assert.match(html, /data-openclaw-main-switch/);
+    assert.match(html, /data-sidebar-toggle/);
     assert.match(html, /name="agent_id" value="agent-openclaw-main"/);
     assert.match(
       html,
@@ -244,6 +249,135 @@ describe('project main agent tab', function() {
       projectMemory: {
         recentArtifacts: [],
       },
+      projectBackendSettings: {
+        effectiveBackend: 'openclaw-proxy',
+        source: 'global',
+      },
+      recentFileChanges: [
+        {
+          status: 'M',
+          status_label: 'Modified',
+          file_path: 'src/app.js',
+          updated_at: '2026-03-27T17:02:00.000Z',
+          change_summary: '+12 -3',
+          change_detail: '## Working tree\n@@ -1,2 +1,2 @@\n-old\n+new',
+        },
+        {
+          status: 'M',
+          status_label: 'Modified',
+          file_path: 'src/view/project.ejs',
+          updated_at: '2026-03-27T17:04:00.000Z',
+          change_summary: '+120 -9',
+          change_detail:
+            'diff --git a/src/view/project.ejs b/src/view/project.ejs\n--- a/src/view/project.ejs\n+++ b/src/view/project.ejs\n@@ -1,2 +1,2 @@\n-old\n+new\n@@ -10,2 +10,2 @@\n-previous\n+current',
+        },
+      ],
+    });
+
+    assert.match(html, /Live changes/);
+    assert.match(html, /data-recent-files-root/);
+    assert.match(html, /## Working tree/);
+    assert.match(html, /\+new/);
+    assert.match(html, /Open full file/);
+    assert.match(html, /file\?path=src%2Fview%2Fproject\.ejs/);
+    assert.doesNotMatch(html, /## Truncated/);
+    assert.doesNotMatch(html, /Diff preview clipped to stay readable/);
+    assert.match(html, /recent-file-item__detail-body--diff/);
+  });
+
+  it('marks the clicked recent-files sort as selected in the markup state', function () {
+    const html = renderProjectTemplate({
+      project: {
+        id: 'proj-sort-state',
+        name: 'Sort State Project',
+        description: 'Regression test project',
+        status: 'active',
+        created_at: '2026-03-27T17:00:00.000Z',
+        last_activity: '2026-03-27T17:01:00.000Z',
+        memory_namespace: 'memory.proj-sort-state',
+        workspace_dir: '/tmp/proj-sort-state',
+        sessions: [{ id: 'ses-1' }],
+        workflows: [],
+        agents: [
+          {
+            id: 'agent-openclaw-main',
+            name: 'OpenClaw Main',
+            kind: 'openclaw',
+            role: 'software engineer',
+          },
+        ],
+      },
+      activeTab: 'conversations',
+      activeSession: 'ses-1',
+      currentSession: { id: 'ses-1', title: 'Session 1', state: 'active' },
+      messages: [],
+      logs: [],
+      artifacts: [],
+      agents: [
+        {
+          id: 'agent-openclaw-main',
+          name: 'OpenClaw Main',
+          kind: 'openclaw',
+          role: 'software engineer',
+        },
+      ],
+      planning: { currentState: [], now: [], health: [] },
+      sidebarProjects: [],
+      projectGroups: {
+        recent: [],
+        favourites: [],
+        favorites: [],
+        general: [],
+        pave: [],
+        sec06: [],
+        archived: [],
+      },
+      stats: {
+        sessionCount: 1,
+        workflowCount: 0,
+        agentCount: 1,
+        messageCount: 0,
+        logCount: 0,
+        artifactCount: 0,
+        activeSession: 'ses-1',
+        activeWorkflowCount: 0,
+        idleWorkflowCount: 0,
+        latestWorkflow: null,
+        latestSession: { id: 'ses-1' },
+        latestMessage: null,
+        latestLog: null,
+        workflowStates: {},
+        importedFrom: '',
+      },
+      conversationAgent: {
+        id: 'agent-openclaw-main',
+        name: 'OpenClaw Main',
+        kind: 'openclaw',
+        role: 'software engineer',
+      },
+      codexModel: 'gpt-5.3-codex',
+      codexConfigured: false,
+      projectTabs: [
+        'overview',
+        'conversations',
+        'main-agent',
+        'workflows',
+        'memory',
+        'files',
+        'logs',
+        'settings',
+      ],
+      workflowIdFromQuery: '',
+      formatRelativeTime: (value) => value,
+      formatDateTime: (value) => value,
+      projectMemory: {
+        recentArtifacts: [],
+      },
+      projectBackendSettings: {
+        effectiveBackend: 'openclaw-proxy',
+        source: 'global',
+      },
+      recentFileSort: 'name:asc',
       recentFileChanges: [
         {
           status: 'M',
@@ -256,11 +390,114 @@ describe('project main agent tab', function() {
       ],
     });
 
-    assert.match(html, /Latest changes/);
-    assert.match(html, /data-recent-files-root/);
-    assert.match(html, /## Working tree/);
-    assert.match(html, /\+new/);
-    assert.match(html, /recent-file-item__detail-body--diff/);
+    assert.match(html, /data-recent-files-sort="name:asc"/);
+    assert.match(html, /data-recent-files-sort-option="recent"[^>]*aria-selected="false"/);
+    assert.match(html, /data-recent-files-sort-option="name"[^>]*aria-selected="true"/);
+    assert.match(html, /data-recent-files-sort-option="path"[^>]*aria-selected="false"/);
+    assert.match(html, /data-recent-files-sort-option="name"[\s\S]*?project-rail__sort-label">Name<\/span>[\s\S]*?project-rail__sort-arrow[^>]*>↓/);
+  });
+
+  it('renders truncated conversation messages with a single full-text expander', function () {
+    const longText = 'x'.repeat(2600);
+    const html = renderProjectTemplate({
+      project: {
+        id: 'proj-conversation-truncate',
+        name: 'Conversation Truncate Project',
+        description: 'Regression test project',
+        status: 'active',
+        created_at: '2026-03-27T17:00:00.000Z',
+        last_activity: '2026-03-27T17:01:00.000Z',
+        memory_namespace: 'memory.proj-conversation-truncate',
+        workspace_dir: '/tmp/proj-conversation-truncate',
+        sessions: [{ id: 'ses-1' }],
+        workflows: [],
+        agents: [
+          {
+            id: 'agent-openclaw-project-proj-conversation-truncate',
+            name: 'OpenClaw Conversation',
+            kind: 'openclaw',
+            role: 'software engineer',
+          },
+        ],
+      },
+      activeTab: 'conversations',
+      activeSession: 'ses-1',
+      currentSession: { id: 'ses-1', title: 'Session 1', state: 'active' },
+      messages: [
+        {
+          id: 'msg-1',
+          direction: 'outbound',
+          content: longText,
+          created_at: '2026-03-27T17:02:00.000Z',
+        },
+      ],
+      logs: [],
+      artifacts: [],
+      agents: [
+        {
+          id: 'agent-openclaw-project-proj-conversation-truncate',
+          name: 'OpenClaw Conversation',
+          kind: 'openclaw',
+          role: 'software engineer',
+        },
+      ],
+      conversationAgent: {
+        id: 'agent-openclaw-project-proj-conversation-truncate',
+        name: 'OpenClaw Conversation',
+        kind: 'openclaw',
+        role: 'software engineer',
+      },
+      planning: { currentState: [], now: [], health: [] },
+      sidebarProjects: [],
+      projectGroups: {
+        recent: [],
+        favourites: [],
+        favorites: [],
+        general: [],
+        pave: [],
+        sec06: [],
+        archived: [],
+      },
+      stats: {
+        sessionCount: 1,
+        workflowCount: 0,
+        agentCount: 1,
+        messageCount: 1,
+        logCount: 0,
+        artifactCount: 0,
+        activeSession: 'ses-1',
+        activeWorkflowCount: 0,
+        idleWorkflowCount: 0,
+        latestWorkflow: null,
+        latestSession: { id: 'ses-1' },
+        latestMessage: null,
+        latestLog: null,
+        workflowStates: {},
+        importedFrom: '',
+      },
+      codexModel: 'gpt-5.3-codex',
+      codexConfigured: false,
+      projectTabs: [
+        'overview',
+        'conversations',
+        'main-agent',
+        'workflows',
+        'memory',
+        'files',
+        'logs',
+        'settings',
+      ],
+      workflowIdFromQuery: '',
+      formatRelativeTime: (value) => value,
+      formatDateTime: (value) => value,
+      projectMemory: { recentArtifacts: [] },
+      recentFileSort: 'recent:desc',
+      recentFileChanges: [],
+    });
+
+    assert.match(html, /data-message-toggle[^>]*>show more<\/button>/);
+    assert.match(html, /chat-bubble__body chat-bubble__body--preview" data-message-preview>x{2500}\.\.\.<\/pre>/);
+    assert.match(html, /chat-bubble__body chat-bubble__body--full" data-message-full hidden>x{2600}<\/pre>/);
   });
 
   it('renders a project usage chart on the overview tab', function () {
@@ -353,6 +590,7 @@ describe('project main agent tab', function() {
         latestCommit: {
           hash: 'abcdef1234567890abcdef1234567890abcdef12',
           shortHash: 'abcdef1',
+          branch: 'feature/overview-branch',
           author: 'Ops Dashboard',
           message: 'Update overview details',
           date: '2026-03-27T17:03:00.000Z',
@@ -378,6 +616,7 @@ describe('project main agent tab', function() {
           change_detail: '## Working tree\n@@ -1,2 +1,2 @@\n-old\n+new',
         },
       ],
+      workspaceBranch: 'feature/overview-branch',
       projectUsage: {
         todayTotal: 1200,
         weeklyTotal: 3400,
@@ -399,11 +638,22 @@ describe('project main agent tab', function() {
     assert.match(html, /home-usage\.js/);
     assert.match(html, /Workspace details/);
     assert.match(html, /Project folder/);
+    assert.match(html, /Current branch/);
+    assert.match(html, /feature\/overview-branch/);
     assert.match(html, /Last commit/);
     assert.match(html, /Changed files/);
     assert.match(html, /README\.md/);
     assert.match(html, /data-project-rail/);
-    assert.match(html, /Latest changes/);
+    assert.match(html, /data-project-rail-resize-handle/);
+    assert.match(html, /Live changes/);
+    assert.match(html, /data-recent-files-root/);
+    assert.match(
+      html,
+      /data-recent-files-url="\/api\/project\/proj-overview-usage\/recent-files"/,
+    );
+    assert.match(html, /data-recent-files-sort-option="recent"/);
+    assert.match(html, /data-recent-files-sort-option="name"/);
+    assert.match(html, /data-recent-files-sort-option="path"/);
   });
 
   it('renders workspace settings fields and setup wizard', function () {

@@ -83,6 +83,39 @@
     el.textContent = value;
   }
 
+  var accessErrorEl = null;
+
+  function setAccessError(message, kind) {
+    if (!accessErrorEl) return;
+    var text = String(message || '').trim();
+    accessErrorEl.textContent = text;
+    accessErrorEl.hidden = !text;
+    if (accessErrorEl.classList && typeof accessErrorEl.classList.toggle === 'function') {
+      accessErrorEl.classList.toggle('is-notice', kind === 'notice' && Boolean(text));
+    }
+    if (typeof accessErrorEl.setAttribute === 'function') {
+      accessErrorEl.setAttribute('role', kind === 'notice' ? 'status' : 'alert');
+      accessErrorEl.setAttribute('aria-live', kind === 'notice' ? 'polite' : 'assertive');
+    } else {
+      accessErrorEl.role = kind === 'notice' ? 'status' : 'alert';
+      accessErrorEl.ariaLive = kind === 'notice' ? 'polite' : 'assertive';
+    }
+  }
+
+  function formatLoginError(err, fallback) {
+    var raw = String(err && err.message ? err.message : err || '').trim();
+    var normalized = raw || fallback || 'authentication_failed';
+    if (normalized === 'relay_signal_timeout') return 'Timed out waiting for gateway response.';
+    if (normalized === 'relay_transport_closed') return 'Relay transport closed before the handshake completed.';
+    if (normalized === 'webrtc_connect_timeout') return 'WebRTC connection timed out.';
+    if (normalized === 'missing_session_id') return 'Gateway did not return a session id.';
+    if (normalized === 'bootstrap_rejected') return 'Gateway rejected the login request.';
+    if (normalized.indexOf('bootstrap_reject:') === 0) return normalized.slice('bootstrap_reject:'.length).trim() || 'Gateway rejected the login request.';
+    if (normalized.indexOf('confirm_failed:') === 0) return normalized.slice('confirm_failed:'.length).trim() || 'Session cookie confirmation failed.';
+    if (/^HTTP \d+$/i.test(normalized)) return `Gateway returned ${normalized}.`;
+    return normalized.replace(/_/g, ' ');
+  }
+
   var startupStepEls = {
     prepare: null,
     sign: null,
@@ -731,6 +764,9 @@
 
   async function bootstrapWithEvent(client, event, payload) {
     const result = await client.bootstrap('/api/access/bootstrap', event, { payload: payload || {} });
+    if (!result || result.ok === false || result.type === 'bootstrap_reject') {
+      throw new Error(result && (result.error || result.reason) ? `${result.error || result.reason}` : 'bootstrap_rejected');
+    }
     const sessionId =
       `${(result && result.session && result.session.id) || result.session_id || client.sessionId || ''}`.trim();
     const signalUrl =
@@ -754,7 +790,11 @@
         queueStatus('client', 'Confirming session cookie...');
         await confirmSessionCookie(sessionId, result.bootstrap_cookie_token);
       } catch (err) {
-        queueStatus('client', String(err && err.message ? err.message : err));
+        const message = formatLoginError(err, 'Session cookie confirmation failed.');
+        setAccessError('Authentication failed: ' + message);
+        primeStatusLane('client', message);
+        primeStatusLane('server', message);
+        throw err;
       }
     }
     setAccessStage('connecting');
@@ -765,6 +805,7 @@
     try {
       await connectWithTimeout(client);
       setLoginGlow(false);
+      setAccessError('');
       setStartupStepComplete('session');
       setStartupStepCurrent('session');
       setAccessStage('session');
@@ -777,8 +818,11 @@
       setLoginGlow(false);
       setStartupStepComplete('session');
       setStartupStepCurrent('session');
-      queueStatus('client', 'WebRTC unavailable, continuing with the authenticated dashboard...');
-      setTimeout(navigateToNextUrl, 500);
+      const message = formatLoginError(err, 'WebRTC unavailable.');
+      setAccessError('WebRTC unavailable, continuing with the authenticated dashboard.', 'notice');
+      primeStatusLane('client', 'WebRTC unavailable, continuing with the authenticated dashboard...');
+      primeStatusLane('server', message);
+      setTimeout(navigateToNextUrl, 1200);
     }
     return result;
   }
@@ -834,6 +878,7 @@
   var authMode = 'signer';
   var signerMethod = 'nip07';
   var sessionStage = qs('session_stage');
+  accessErrorEl = qs('access_error');
   var client = null;
   var amberRuntime = null;
 
@@ -899,6 +944,7 @@
   setAuthMode('signer');
   setSignerMethod('nip07');
   setAuthPrompt('signer');
+  setAccessError('');
   setStatusText('client', 'Waiting for sign in…');
   setStatusText('server', 'Waiting for bootstrap request…');
   setStatusLive('client', false);
@@ -933,6 +979,7 @@
       event && event.currentTarget ? event.currentTarget : nip07LoginBtn;
     setAuthButtonsBusy(true);
     setLoginGlow(true);
+    setAccessError('');
     setStartupStepCurrent('prepare');
     try {
       setAccessStage('auth');
@@ -953,7 +1000,10 @@
       setStartupStepCurrent('verify');
       await bootstrapWithEvent(client, signedEvent, payload);
     } catch (err) {
-      queueStatus('client', String(err && err.message ? err.message : err));
+      const message = formatLoginError(err, 'Authentication failed.');
+      setAccessError('Authentication failed: ' + message);
+      primeStatusLane('client', message);
+      primeStatusLane('server', message);
       setAuthButtonsBusy(false);
       setLoginGlow(false);
     }
@@ -964,6 +1014,7 @@
       event && event.currentTarget ? event.currentTarget : amberLoginBtn;
     setAuthButtonsBusy(true);
     setLoginGlow(true);
+    setAccessError('');
     setStartupStepCurrent('prepare');
     try {
       await closeAmberRuntime(amberRuntime);
@@ -1036,7 +1087,10 @@
       setStartupStepCurrent('verify');
       await bootstrapWithEvent(client, signedEvent, payload);
     } catch (err) {
-      queueStatus('client', String(err && err.message ? err.message : err));
+      const message = formatLoginError(err, 'Authentication failed.');
+      setAccessError('Authentication failed: ' + message);
+      primeStatusLane('client', message);
+      primeStatusLane('server', message);
       setAuthButtonsBusy(false);
       setLoginGlow(false);
     } finally {
@@ -1050,6 +1104,7 @@
     const button = event && event.currentTarget ? event.currentTarget : nsecBtn;
     setAuthButtonsBusy(true);
     setLoginGlow(true);
+    setAccessError('');
     setStartupStepCurrent('prepare');
     try {
       primeStatusLane('client', 'Preparing local signing...');
@@ -1067,7 +1122,10 @@
       setStartupStepCurrent('verify');
       await bootstrapWithEvent(client, wrappedEvent, payload);
     } catch (err) {
-      queueStatus('client', String(err && err.message ? err.message : err));
+      const message = formatLoginError(err, 'Authentication failed.');
+      setAccessError('Authentication failed: ' + message);
+      primeStatusLane('client', message);
+      primeStatusLane('server', message);
       setAuthButtonsBusy(false);
       setLoginGlow(false);
     }
@@ -1076,6 +1134,7 @@
   connectBtn.addEventListener('click', async function() {
     if (!client) return;
     try {
+      setAccessError('');
       setAccessStage('connecting');
       queueStatus('client', 'Connecting WebRTC data channel...');
       await connectWithTimeout(client);
@@ -1085,14 +1144,18 @@
       try {
         client.close();
       } catch {}
-      queueStatus('client', 'WebRTC unavailable, continuing with the authenticated dashboard...');
-      setTimeout(navigateToNextUrl, 500);
+      const message = formatLoginError(err, 'WebRTC unavailable.');
+      setAccessError('WebRTC unavailable, continuing with the authenticated dashboard.', 'notice');
+      primeStatusLane('client', 'WebRTC unavailable, continuing with the authenticated dashboard...');
+      primeStatusLane('server', message);
+      setTimeout(navigateToNextUrl, 1200);
     }
   });
 
   fetchBtn.addEventListener('click', async function() {
     if (!client) return;
     try {
+      setAccessError('');
       if (!client.connected) {
         await client.connect();
       }
@@ -1106,7 +1169,10 @@
         response.body.slice(0, 3000),
       ].join('\n'));
     } catch (err) {
-      queueStatus('client', String(err && err.message ? err.message : err));
+      const message = formatLoginError(err, 'Connection failed.');
+      setAccessError('Connection failed: ' + message);
+      primeStatusLane('client', message);
+      primeStatusLane('server', message);
     }
   });
 })();

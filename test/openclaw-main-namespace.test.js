@@ -6,6 +6,7 @@ const path = require('path');
 describe('openclaw main namespace', function() {
   let app;
   let store;
+  let db;
   let tmpDir;
   let oldDataDir;
   let oldDbPath;
@@ -23,7 +24,7 @@ describe('openclaw main namespace', function() {
     delete require.cache[require.resolve('../src/planning')];
     delete require.cache[require.resolve('../src/app')];
 
-    const db = require('../src/db');
+    db = require('../src/db');
     db.initDb();
     app = require('../src/app');
     store = require('../src/store');
@@ -47,6 +48,7 @@ describe('openclaw main namespace', function() {
   });
 
   it('stores OpenClaw Main messages separately from the current project chat', async function() {
+    db.db.prepare('UPDATE agents SET kind=? WHERE id=?').run('echo', 'agent-openclaw-main');
     const project = store.createProject({
       name: `Namespace Project ${Date.now()}`,
       description: 'Namespace regression project',
@@ -84,5 +86,43 @@ describe('openclaw main namespace', function() {
     const mainMessages = store.listProjectMessages(mainProject.id, 20);
     assert.equal(mainMessages.some((message) => message.content === 'OpenClaw Main message'), true);
     assert.equal(mainMessages.some((message) => message.content === 'Project chat message'), false);
+  });
+
+  it('creates a new main-agent session when the project session id already exists elsewhere', async function() {
+    db.db.prepare('UPDATE agents SET kind=? WHERE id=?').run('echo', 'agent-openclaw-main');
+    const project = store.createProject({
+      name: `Namespace Collision ${Date.now()}`,
+      description: 'Namespace collision regression project',
+      tags: ['test'],
+      settings: {},
+    });
+
+    const projectResponse = await app.processProjectMessage({
+      projectId: project.id,
+      body: {
+        text: 'Project session anchor',
+        message_type: 'prompt',
+      },
+      acceptHeader: 'application/json',
+    });
+
+    const collidedSessionId = projectResponse.session.id;
+    const mainResponse = await app.processProjectMessage({
+      projectId: project.id,
+      body: {
+        text: 'OpenClaw Main with collided session',
+        message_type: 'prompt',
+        agent_id: 'agent-openclaw-main',
+        session_id: collidedSessionId,
+      },
+      acceptHeader: 'application/json',
+    });
+
+    assert.equal(mainResponse.ok, true);
+    assert.notEqual(mainResponse.session.id, collidedSessionId);
+
+    const mainProject = store.ensureOpenClawMainProject();
+    const mainMessages = store.listProjectMessages(mainProject.id, 20);
+    assert.equal(mainMessages.some((message) => message.content === 'OpenClaw Main with collided session'), true);
   });
 });

@@ -244,17 +244,33 @@ function summarizeProjectMemory(projectMemory = {}) {
   return sections.join('\n\n');
 }
 
+function summarizePlanningDocs(docs = []) {
+  return (Array.isArray(docs) ? docs : []).map(doc => {
+    const scope = `${doc?.scope || 'planning'}`.trim();
+    const text = `${doc?.text || ''}`.trim();
+    if (!text) return '';
+    return `## [${scope}]\n${text}`;
+  }).filter(Boolean).join('\n\n');
+}
+
 function summarizeProjectConfiguration(project = {}) {
   const settings = project?.settings_json || {};
   const codeFolder = `${settings.code_folder || settings.imported_from || project?.workspace_dir || ''}`.trim();
   const subfolders = Array.isArray(settings.subfolders) ? settings.subfolders : [];
   const ignoreFolders = Array.isArray(settings.ignore_folders) ? settings.ignore_folders : [];
   const instructions = `${settings.getting_started || settings.instructions || ''}`.trim();
+  const backendOverride = `${settings.backend_override || settings.backendOverride || 'inherit'}`.trim() || 'inherit';
+  const routstrProvider = `${settings.routstr_provider || settings.routstrProvider || ''}`.trim();
+  const routstrModel = `${settings.routstr_model || settings.routstrModel || ''}`.trim();
   const lines = [
     `Main code folder: ${codeFolder || '(not set)'}`,
     `Subfolders: ${subfolders.length ? subfolders.join(', ') : '(all files under the code folder)'}`,
     `Ignored folders: ${ignoreFolders.length ? ignoreFolders.join(', ') : '(none)'}`,
+    `Backend override: ${backendOverride}`,
   ];
+  if (routstrProvider || routstrModel) {
+    lines.push(`Routstr: ${routstrProvider || '(provider unset)'} / ${routstrModel || '(model unset)'}`);
+  }
   if (instructions) lines.push(`Instructions: ${instructions}`);
   return lines.join('\n');
 }
@@ -281,6 +297,8 @@ function buildCodexPrompt({ project, envelope, planning, config = {} }) {
     planning?.now?.length ? stringifyPromptSection('Now', summarizePlanningList(planning.now, 3)) : '',
     planning?.next?.length ? stringifyPromptSection('Next', summarizePlanningList(planning.next, 2)) : '',
     planning?.risks?.length ? stringifyPromptSection('Risks', summarizePlanningList(planning.risks, 2)) : '',
+    planning?.todo?.length ? stringifyPromptSection('Todo', summarizePlanningDocs(planning.todo)) : '',
+    planning?.context?.length ? stringifyPromptSection('Context', summarizePlanningDocs(planning.context)) : '',
     stringifyPromptSection('User request', payloadText || '(no text provided)'),
     stringifyPromptSection('Envelope', payloadJson),
   ].filter(Boolean);
@@ -342,6 +360,9 @@ function buildOpenClawPrompt({ agent, envelope, project, projectState, planning,
     planning?.next?.length ? stringifyPromptSection('Next', summarizePlanningList(planning.next, 3)) : '',
     planning?.backlog?.length ? stringifyPromptSection('Backlog', summarizePlanningList(planning.backlog, 2)) : '',
     planning?.risks?.length ? stringifyPromptSection('Risks', summarizePlanningList(planning.risks, 2)) : '',
+    planning?.todo?.length ? stringifyPromptSection('Todo', summarizePlanningDocs(planning.todo)) : '',
+    planning?.decisions?.length ? stringifyPromptSection('Decisions', summarizePlanningDocs(planning.decisions)) : '',
+    planning?.context?.length ? stringifyPromptSection('Context', summarizePlanningDocs(planning.context)) : '',
     stringifyPromptSection('Session', [
       `Project session id: ${envelope.session_id || '(none)'}`,
       `Workflow id: ${envelope.workflow_id || '(none)'}`,
@@ -498,13 +519,18 @@ async function routeToOpenClaw({ agent, envelope, project = null, projectState =
   };
 }
 
-async function routeToAgent({ agent, envelope, project = null, projectState = null, planning = null, conversationHistory = [], projectMemory = null }) {
+async function routeToAgent({ agent, envelope, project = null, projectState = null, planning = null, conversationHistory = [], projectMemory = null, agentBackendSettings = null }) {
   if (!agent || agent.kind === 'echo') {
     return {
       status: 'ok',
       output: `Echo(${envelope.agent_id || 'none'}): ${envelope.payload?.text || envelope.payload?.prompt || 'No text payload'}`,
       toolOutput: { adapter: 'echo' }
     };
+  }
+
+  const effectiveBackend = `${agentBackendSettings?.effectiveBackend || ''}`.trim().toLowerCase();
+  if (effectiveBackend === 'direct-codex') {
+    return routeToCodex({ agent, envelope, project, planning });
   }
 
   if (agent.kind === 'http') {

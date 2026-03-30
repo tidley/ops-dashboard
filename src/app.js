@@ -20,6 +20,7 @@ const {
   buildGlobalSettingsWizard,
   buildProjectSettingsWizard,
   getProjectFolderSettings,
+  resolveAgentBackendSettings,
   normalizeFolderListField,
   shouldIncludeRecentFile,
 } = require('./project-settings');
@@ -96,6 +97,10 @@ function getGlobalWorkspaceSettings() {
   return store.getAppSetting('global_workspace_settings', {});
 }
 
+function getResolvedAgentBackend(project, globalSettings = null) {
+  return resolveAgentBackendSettings(project, globalSettings || getGlobalWorkspaceSettings());
+}
+
 function formatRelativeTime(iso) {
   if (!iso) return 'No activity yet';
   const time = new Date(iso).getTime();
@@ -121,6 +126,15 @@ function formatDateTime(iso) {
     minute: '2-digit',
     hour12: false,
   });
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function decorateProject(project) {
@@ -435,6 +449,13 @@ function resolveConversationProject(project, mode = 'project') {
   return project;
 }
 
+function buildConversationThreadSessionId(projectId, sessionId, agentId) {
+  const projectPart = `${projectId || 'project'}`.trim();
+  const sessionPart = `${sessionId || 'session'}`.trim();
+  const agentPart = `${agentId || 'agent'}`.trim();
+  return `opsdash:${projectPart}:${sessionPart}:${agentPart}`;
+}
+
 function getOpenClawMainAgent() {
   const agents = store.listAgents();
   return agents.find(a => a.id === 'agent-openclaw-main') || agents.find(a => a.kind === 'openclaw' && a.is_default) || null;
@@ -461,6 +482,195 @@ function resolveProjectRoot(project, folderSettings = null) {
   }
 
   return '';
+}
+
+function resolveProjectBranch(project, folderSettings = null) {
+  const root = resolveProjectRoot(project, folderSettings);
+  if (!root) return '';
+
+  const commands = [
+    `git -C ${JSON.stringify(root)} branch --show-current`,
+    `git -C ${JSON.stringify(root)} rev-parse --abbrev-ref HEAD`,
+  ];
+
+  for (const command of commands) {
+    try {
+      const branch = execSync(command, {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }).trim();
+      if (branch && branch !== 'HEAD') return branch;
+    } catch {
+      // try the next fallback
+    }
+  }
+
+  try {
+    const shortHash = execSync(`git -C ${JSON.stringify(root)} rev-parse --short HEAD`, {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+    if (shortHash) return `detached HEAD (${shortHash})`;
+  } catch {
+    // ignore: not a git repository or no commits yet
+  }
+
+  return '';
+}
+
+function isPathInsideRoot(root, filePath) {
+  if (!root || !filePath) return false;
+  const resolvedRoot = path.resolve(root);
+  const resolvedFile = path.resolve(filePath);
+  return resolvedFile === resolvedRoot || resolvedFile.startsWith(`${resolvedRoot}${path.sep}`);
+}
+
+function buildFileViewerPage({ project, root, filePath, content, isBinary = false }) {
+  const projectName = project?.name || 'Project';
+  const safeFilePath = escapeHtml(filePath);
+  const safeProjectName = escapeHtml(projectName);
+  const safeRoot = escapeHtml(root);
+  const lines = isBinary
+    ? []
+    : String(content || '').replace(/\r\n?/g, '\n').split('\n');
+  const lineMarkup = isBinary
+    ? `<div class="file-viewer__empty">Binary files cannot be shown in the text viewer.</div>`
+    : lines.map((line, index) => {
+        const number = index + 1;
+        const text = line ? escapeHtml(line) : '&nbsp;';
+        return `<div class="file-viewer__line"><span class="file-viewer__line-no">${number}</span><code class="file-viewer__line-code">${text}</code></div>`;
+      }).join('');
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${safeFilePath} | ${safeProjectName}</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0f1115;
+      --bg-2: #171b24;
+      --line: #2c3444;
+      --line-strong: #3a4357;
+      --text: #e6edf3;
+      --muted: #94a3b8;
+      --accent: #74b4ff;
+      --green: #41d36a;
+      --red: #ff6a6a;
+      --cyan: #4bd8de;
+      --mono: "JetBrains Mono", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      --sans: Inter, "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text); font-family: var(--sans); }
+    body { padding: 18px; }
+    .file-viewer {
+      min-height: calc(100vh - 36px);
+      display: grid;
+      gap: 14px;
+    }
+    .file-viewer__header {
+      display: grid;
+      gap: 6px;
+      padding: 16px 18px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: linear-gradient(180deg, rgba(23,27,36,0.95), rgba(16,18,24,0.96));
+    }
+    .file-viewer__eyebrow {
+      color: var(--muted);
+      font-size: 0.78rem;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+    }
+    .file-viewer__title {
+      margin: 0;
+      font-size: 1.05rem;
+      line-height: 1.35;
+      word-break: break-word;
+    }
+    .file-viewer__meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 14px;
+      color: var(--muted);
+      font-size: 0.8rem;
+    }
+    .file-viewer__meta code {
+      font-family: var(--mono);
+      color: var(--text);
+      font-size: 0.8rem;
+    }
+    .file-viewer__panel {
+      display: grid;
+      gap: 0;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      overflow: hidden;
+      background: var(--bg-2);
+    }
+    .file-viewer__line {
+      display: grid;
+      grid-template-columns: 4.5rem minmax(0, 1fr);
+      gap: 12px;
+      padding: 0 16px;
+      min-height: 1.65rem;
+      border-top: 1px solid rgba(44,52,68,0.65);
+      align-items: start;
+      font-family: var(--mono);
+      font-size: 0.84rem;
+      line-height: 1.55;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .file-viewer__line:first-child { border-top: 0; }
+    .file-viewer__line-no {
+      position: sticky;
+      left: 0;
+      padding: 0.12rem 0;
+      color: var(--muted);
+      text-align: right;
+      user-select: none;
+      background: var(--bg-2);
+    }
+    .file-viewer__line-code {
+      display: block;
+      padding: 0.12rem 0;
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      color: var(--text);
+    }
+    .file-viewer__empty {
+      padding: 18px 16px;
+      color: var(--muted);
+      font-family: var(--mono);
+    }
+    @media (max-width: 720px) {
+      body { padding: 12px; }
+      .file-viewer__line { grid-template-columns: 3.4rem minmax(0, 1fr); padding: 0 12px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="file-viewer">
+    <header class="file-viewer__header">
+      <div class="file-viewer__eyebrow">Full file</div>
+      <h1 class="file-viewer__title">${safeFilePath}</h1>
+      <div class="file-viewer__meta">
+        <span>Project <code>${safeProjectName}</code></span>
+        <span>Root <code>${safeRoot}</code></span>
+        <span>${isBinary ? 'Binary file' : `${lines.length} lines`}</span>
+      </div>
+    </header>
+    <section class="file-viewer__panel" aria-label="File content with line numbers">
+      ${lineMarkup}
+    </section>
+  </main>
+</body>
+</html>`;
 }
 
 function buildRecentFileChanges(project, limit = 10, folderSettings = null) {
@@ -537,7 +747,6 @@ function buildRecentFileChanges(project, limit = 10, folderSettings = null) {
   const readDiffPreview = (filePath, status) => {
     const absPath = path.join(root, filePath);
     const sections = [];
-    const diffLimit = 4000;
 
     const runDiff = (command) => {
       try {
@@ -565,9 +774,7 @@ function buildRecentFileChanges(project, limit = 10, folderSettings = null) {
     }
 
     const joined = sections.join('\n\n');
-    if (!joined) return '';
-    if (joined.length <= diffLimit) return joined;
-    return `${joined.slice(0, diffLimit).replace(/\s+$/, '')}\n\n## Truncated\nDiff preview clipped to stay readable.`;
+    return joined;
   };
 
   try {
@@ -609,6 +816,101 @@ function buildRecentFileChanges(project, limit = 10, folderSettings = null) {
   }
 
   return items.slice(0, max);
+}
+
+function normalizeRecentFileSortState(value) {
+  const defaults = {
+    recent: 'desc',
+    name: 'asc',
+    path: 'asc',
+  };
+
+  const raw = typeof value === 'object' && value
+    ? {
+        key: `${value.key || value.sort || 'recent'}`.trim().toLowerCase(),
+        direction: `${value.direction || value.dir || ''}`.trim().toLowerCase(),
+      }
+    : (() => {
+        const text = `${lastStringField(value, 'recent:desc')}`.trim().toLowerCase().replace(/\s+/g, '');
+        const parts = text.split(':');
+        return {
+          key: parts[0] || 'recent',
+          direction: parts[1] || '',
+        };
+      })();
+
+  const key = ['recent', 'name', 'path'].includes(raw.key) ? raw.key : 'recent';
+  const direction = raw.direction === 'asc' || raw.direction === 'desc'
+    ? raw.direction
+    : defaults[key];
+
+  return {
+    key,
+    direction,
+  };
+}
+
+function formatRecentFileSortState(value) {
+  const state = normalizeRecentFileSortState(value);
+  return `${state.key}:${state.direction}`;
+}
+
+function sortRecentFileChanges(items, sortMode = 'recent:desc') {
+  const sortState = normalizeRecentFileSortState(sortMode);
+  const list = Array.isArray(items) ? items.slice() : [];
+
+  const parseDateValue = (value) => {
+    const time = new Date(value || '').getTime();
+    return Number.isFinite(time) ? time : 0;
+  };
+
+  const filePathParts = (filePath) => {
+    const value = String(filePath || '').trim();
+    const dir = path.dirname(value);
+    const base = path.basename(value);
+    return {
+      dir: dir === '.' ? '' : dir,
+      base: base || value,
+      full: value,
+    };
+  };
+
+  const compareByRecent = (a, b) => {
+    const aTime = parseDateValue(a.updated_at);
+    const bTime = parseDateValue(b.updated_at);
+    if (bTime !== aTime) return bTime - aTime;
+    return String(a.file_path || '').localeCompare(String(b.file_path || ''));
+  };
+
+  const compareByName = (a, b) => {
+    const aParts = filePathParts(a.file_path);
+    const bParts = filePathParts(b.file_path);
+    if (aParts.base !== bParts.base) return aParts.base.localeCompare(bParts.base);
+    if (aParts.dir !== bParts.dir) return aParts.dir.localeCompare(bParts.dir);
+    return aParts.full.localeCompare(bParts.full);
+  };
+
+  const compareByPath = (a, b) => {
+    const aParts = filePathParts(a.file_path);
+    const bParts = filePathParts(b.file_path);
+    if (aParts.dir !== bParts.dir) return aParts.dir.localeCompare(bParts.dir);
+    if (aParts.base !== bParts.base) return aParts.base.localeCompare(bParts.base);
+    return aParts.full.localeCompare(bParts.full);
+  };
+
+  const comparator = sortState.key === 'name'
+    ? compareByName
+    : sortState.key === 'path'
+      ? compareByPath
+      : compareByRecent;
+
+  const direction = sortState.direction || (sortState.key === 'recent' ? 'desc' : 'asc');
+  const invert = (sortState.key === 'recent' && direction === 'asc') || (sortState.key !== 'recent' && direction === 'desc');
+
+  return list.sort(function(a, b) {
+    const result = comparator(a, b);
+    return invert ? -result : result;
+  });
 }
 
 function buildLatestCommitSnapshot(project, limit = 8, folderSettings = null) {
@@ -679,9 +981,7 @@ function buildLatestCommitSnapshot(project, limit = 8, folderSettings = null) {
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'ignore'],
       }).trim();
-      if (!raw) return '';
-      if (raw.length <= 4000) return raw;
-      return `${raw.slice(0, 4000).replace(/\s+$/, '')}\n\n## Truncated\nDiff preview clipped to stay readable.`;
+      return raw;
     } catch (error) {
       return `${error.stdout || ''}`.trim();
     }
@@ -729,6 +1029,7 @@ function buildLatestCommitSnapshot(project, limit = 8, folderSettings = null) {
     author: commitAuthor,
     message: commitMessage || 'Latest commit',
     date: commitDate,
+    branch: resolveProjectBranch(project, resolvedFolderSettings),
     files: files.slice(0, max),
   };
 }
@@ -749,6 +1050,7 @@ function buildProjectMemorySnapshot(project, activeSession, messages, logs, arti
   const projectSettings = folderSettings || getProjectFolderSettings(project);
   return {
     workspaceDir: resolveProjectRoot(project, projectSettings),
+    workspaceBranch: resolveProjectBranch(project, projectSettings),
     memoryNamespace: project?.memory_namespace || '',
     projectSettings,
     latestCommit: buildLatestCommitSnapshot(project, 6, projectSettings),
@@ -820,6 +1122,7 @@ async function processProjectMessage({ projectId, body = {}, acceptHeader = '' }
   const requestedAgentId = lastStringField(body.agent_id, '');
   const isMainConversation = requestedAgentId === 'agent-openclaw-main';
   const conversationProject = resolveConversationProject(project, isMainConversation ? 'main' : 'project');
+  const agentBackendSettings = isMainConversation ? null : getResolvedAgentBackend(conversationProject);
   const projectState = store.ensureProjectState(conversationProject.id);
   const session = store.ensureSession(conversationProject.id, sessionId, workflowId || null);
   const projectConversationAgent = resolveConversationAgent(conversationProject, 'project');
@@ -827,6 +1130,7 @@ async function processProjectMessage({ projectId, body = {}, acceptHeader = '' }
   const agentId = requestedAgentId === 'agent-openclaw-main'
     ? (mainConversationAgent?.id || 'agent-openclaw-main')
     : (projectConversationAgent?.id || 'agent-openclaw-main');
+  const agentSessionId = buildConversationThreadSessionId(conversationProject.id, session.id, agentId);
   const messageType = lastStringField(body.message_type, 'prompt') || 'prompt';
   const priority = lastStringField(body.priority, 'normal') || 'normal';
 
@@ -839,8 +1143,10 @@ async function processProjectMessage({ projectId, body = {}, acceptHeader = '' }
     message_type: messageType,
     priority,
     payload,
-    agent_session_id: session.id,
+    agent_session_id: agentSessionId,
     project_state: projectState,
+    agent_backend: agentBackendSettings.effectiveBackend,
+    agent_backend_settings: agentBackendSettings,
   };
   const conversationHistory = getOpenClawHistory(conversationProject, session.id);
 
@@ -858,7 +1164,16 @@ async function processProjectMessage({ projectId, body = {}, acceptHeader = '' }
 
   let routed;
   try {
-    routed = await routeToAgent({ agent, envelope, project: conversationProject, projectState, planning, conversationHistory, projectMemory });
+    routed = await routeToAgent({
+      agent,
+      envelope,
+      project: conversationProject,
+      projectState,
+      planning,
+      conversationHistory,
+      projectMemory,
+      agentBackendSettings,
+    });
     store.appendMessage({
       project_id: conversationProject.id,
       session_id: session.id,
@@ -884,7 +1199,7 @@ async function processProjectMessage({ projectId, body = {}, acceptHeader = '' }
     });
 
     store.touchProjectState(conversationProject.id, {
-      openclaw_session_id: session.id,
+      openclaw_session_id: agentSessionId,
       openclaw_memory_json: {
         summary: rawText.slice(0, 240),
         last_user_message: rawText.slice(0, 240),
@@ -1027,6 +1342,7 @@ app.get('/settings', (req, res) => {
     ...globalWorkspaceSettings,
     code_folder: globalWorkspaceSettings.code_folder || globalWorkspaceSettings.codeFolder || path.resolve(__dirname, '..'),
   });
+  const globalBackendSettings = getResolvedAgentBackend({ settings_json: globalWorkspaceSettings }, globalWorkspaceSettings);
 
   res.render('settings', {
     projects,
@@ -1034,6 +1350,7 @@ app.get('/settings', (req, res) => {
     dashboard,
     globalWorkspaceSettings,
     globalSettingsWizard,
+    globalBackendSettings,
     formatRelativeTime,
   });
 });
@@ -1147,11 +1464,17 @@ app.get('/project/:projectId', (req, res) => {
   const projectGroups = buildProjectGroups(sidebarProjects);
   const stats = computeProjectStats(project, messages, logs, artifacts, activeSession);
   const currentSession = conversationProject.sessions.find(s => s.id === activeSession) || conversationProject.sessions[0] || null;
+  const projectBackendSettings = getResolvedAgentBackend(project, globalWorkspaceSettings);
   const conversationAgent = activeTab === 'main-agent'
     ? resolveConversationAgent(conversationProject, 'main')
     : resolveConversationAgent(project, 'project');
   const projectMemory = buildProjectMemorySnapshot(activeTab === 'main-agent' ? conversationProject : project, activeSession, messages, logs, artifacts, projectFolderSettings);
-  const recentFileChanges = buildRecentFileChanges(activeTab === 'main-agent' ? conversationProject : project, 10, projectFolderSettings);
+  const workspaceBranch = resolveProjectBranch(activeTab === 'main-agent' ? conversationProject : project, projectFolderSettings);
+  const recentFileSort = formatRecentFileSortState(req.query.recent_files_sort || 'recent:desc');
+  const recentFileChanges = sortRecentFileChanges(
+    buildRecentFileChanges(activeTab === 'main-agent' ? conversationProject : project, 25, projectFolderSettings),
+    recentFileSort,
+  );
   projectMemory.recentFileChanges = recentFileChanges;
   const projectSettingsWizard = buildProjectSettingsWizard(project, globalWorkspaceSettings);
   const codexModel = process.env.CODEX_MODEL || 'gpt-5.3-codex';
@@ -1185,15 +1508,55 @@ app.get('/project/:projectId', (req, res) => {
     formatDateTime,
     projectMemory,
     recentFileChanges,
+    recentFileSort,
     projectUsage,
     projectFolderSettings,
     projectSettingsWizard,
     globalWorkspaceSettings,
+    projectBackendSettings,
+    workspaceBranch,
     mainAgent,
     mainProject: mainProject || null,
     mainStats: mainStats || null,
     mainState: mainState || null,
   });
+});
+
+app.get('/project/:projectId/file', (req, res) => {
+  const project = store.getProject(req.params.projectId);
+  if (!project) return res.status(404).send('Project not found');
+
+  const globalWorkspaceSettings = getGlobalWorkspaceSettings();
+  const folderSettings = getProjectFolderSettings(project, globalWorkspaceSettings);
+  const root = resolveProjectRoot(project, folderSettings);
+  if (!root) return res.status(404).send('Workspace root not found');
+
+  const relativePath = lastStringField(req.query.path || req.query.file_path || '', '');
+  if (!relativePath) return res.status(400).send('File path is required');
+
+  const absolutePath = path.resolve(root, relativePath);
+  if (!isPathInsideRoot(root, absolutePath)) {
+    return res.status(400).send('Invalid file path');
+  }
+
+  let buffer;
+  try {
+    buffer = fs.readFileSync(absolutePath);
+  } catch {
+    return res.status(404).send('File not found');
+  }
+
+  const isBinary = buffer.includes(0);
+  const content = isBinary ? '' : buffer.toString('utf8');
+  const viewerHtml = buildFileViewerPage({
+    project,
+    root,
+    filePath: relativePath,
+    content,
+    isBinary,
+  });
+
+  res.type('html').send(viewerHtml);
 });
 
 app.post('/api/projects', (req, res) => {
@@ -1223,10 +1586,11 @@ app.post('/api/projects/:projectId/favorite', (req, res) => {
   const project = store.getProject(req.params.projectId);
   if (!project) return res.status(404).send('Project not found');
 
-  const favorite = ['1', 'true', 'on', 'yes'].includes(`${req.body.favorite || ''}`.toLowerCase());
+  const body = req.body || {};
+  const favorite = ['1', 'true', 'on', 'yes'].includes(`${body.favorite || ''}`.toLowerCase());
   store.setProjectFavorite(req.params.projectId, favorite);
 
-  const returnTo = `${req.body.return_to || ''}`.trim() || req.get('referer') || `/project/${req.params.projectId}`;
+  const returnTo = `${body.return_to || ''}`.trim() || req.get('referer') || `/project/${req.params.projectId}`;
   res.redirect(returnTo);
 });
 
@@ -1247,6 +1611,9 @@ app.post('/api/projects/:projectId/settings', (req, res) => {
 
   const codeFolder = `${req.body.code_folder || ''}`.trim();
   const gettingStarted = `${req.body.getting_started || req.body.instructions || ''}`.trim();
+  const backendOverride = `${req.body.backend_override || req.body.backendOverride || ''}`.trim() || 'inherit';
+  const routstrProvider = `${req.body.routstr_provider || req.body.routstrProvider || ''}`.trim();
+  const routstrModel = `${req.body.routstr_model || req.body.routstrModel || ''}`.trim();
 
   const patch = {
     code_folder: codeFolder,
@@ -1254,6 +1621,9 @@ app.post('/api/projects/:projectId/settings', (req, res) => {
     subfolders: [],
     ignore_folders: [],
     wizard_completed_at: new Date().toISOString(),
+    backend_override: backendOverride,
+    routstr_provider: routstrProvider,
+    routstr_model: routstrModel,
   };
 
   if (codeFolder) {
@@ -1271,6 +1641,9 @@ app.post('/api/settings', (req, res) => {
   const subfolders = normalizeFolderListField(req.body.subfolders || req.body.subfolders_raw || '');
   const ignoreFolders = normalizeFolderListField(req.body.ignore_folders || req.body.ignore_folders_raw || '');
   const gettingStarted = `${req.body.getting_started || req.body.instructions || ''}`.trim();
+  const agentBackend = `${req.body.agent_backend || req.body.agentBackend || ''}`.trim() || 'openclaw-proxy';
+  const routstrProvider = `${req.body.routstr_provider || req.body.routstrProvider || ''}`.trim();
+  const routstrModel = `${req.body.routstr_model || req.body.routstrModel || ''}`.trim();
 
   store.setAppSetting('global_workspace_settings', {
     code_folder: codeFolder,
@@ -1278,6 +1651,9 @@ app.post('/api/settings', (req, res) => {
     ignore_folders: ignoreFolders,
     getting_started: gettingStarted,
     wizard_completed_at: new Date().toISOString(),
+    agent_backend: agentBackend,
+    routstr_provider: routstrProvider,
+    routstr_model: routstrModel,
   });
 
   const returnTo = `${req.body.return_to || ''}`.trim() || '/settings';
@@ -1406,6 +1782,28 @@ app.get('/api/project/:projectId/messages', (req, res) => {
   res.json({ session_id: sessionId, messages });
 });
 
+app.get('/api/project/:projectId/recent-files', (req, res) => {
+  const project = store.getProject(req.params.projectId);
+  if (!project) return res.status(404).json({ error: 'project_not_found' });
+
+  const tab = normalizeProjectTab(req.query.tab);
+  const folderSettings = getProjectFolderSettings(project, getGlobalWorkspaceSettings());
+  const recentFileSort = formatRecentFileSortState(req.query.sort || 'recent:desc');
+  const targetProject = tab === 'main-agent' ? resolveConversationProject(project, 'main') : project;
+  const files = sortRecentFileChanges(
+    buildRecentFileChanges(targetProject, Number(req.query.limit) || 10, folderSettings),
+    recentFileSort,
+  );
+
+  return res.json({
+    project_id: project.id,
+    tab,
+    sort: recentFileSort,
+    refreshed_at: new Date().toISOString(),
+    files,
+  });
+});
+
 app.post('/api/project/:projectId/codex', async (req, res) => {
   const project = store.getProject(req.params.projectId);
   if (!project) return res.status(404).send('Project not found');
@@ -1515,4 +1913,5 @@ app.processProjectMessage = processProjectMessage;
 app.relayAccessController = relayAccessController;
 app.buildDashboardUsageStats = buildDashboardUsageStats;
 app.buildRecentFileChanges = buildRecentFileChanges;
+app.sortRecentFileChanges = sortRecentFileChanges;
 app.buildLatestCommitSnapshot = buildLatestCommitSnapshot;

@@ -5,12 +5,12 @@
    - keep the current env / OpenClaw binary path documented
    - make restarts and service health easy to verify
 
-2. Complete the settings split
-   - keep Global Settings as the workspace-default editor
-   - keep Project Settings scoped to project-specific overrides only
-   - make the helper copy and wizard flow stay in sync with that split
+2. Lock the transport path
+   - keep STUN as the minimum required peer-discovery service
+   - do not introduce TURN into the access path
+   - make holepunching / reconnect behavior explicit in docs and prompts
 
-3. Add the next security layer
-   - RBAC roles (admin/operator/viewer)
-   - scoped API token model
-   - keep the current access-session flow as the auth bridge
+3. Complete the backend split
+   - keep Global Settings as the workspace-default backend editor
+   - keep Project Settings scoped to project-specific backend overrides only
+   - keep the runtime resolution order explicit: project override -> global default -> safe fallback

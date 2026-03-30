@@ -57,6 +57,22 @@
     return section ? section.querySelector('[data-sidebar-body]') : null;
   }
 
+  function refreshSidebarSectionCount(section) {
+    if (!section) return;
+    var body = section.querySelector('[data-sidebar-body]');
+    var count = body ? body.querySelectorAll('[data-project-item]').length : 0;
+    var countEl = section.querySelector('.sidebar-section__count');
+    if (countEl) countEl.textContent = '(' + count + ')';
+    section.hidden = count === 0 && section.classList.contains('sidebar-section--collapsed') ? true : section.hidden;
+  }
+
+  function refreshSidebarSectionCounts(root) {
+    if (!root) return;
+    root.querySelectorAll('[data-sidebar-collapsible]').forEach(function(section) {
+      refreshSidebarSectionCount(section);
+    });
+  }
+
   function createSidebarSection(key, title) {
     var section = document.createElement('section');
     section.className = 'sidebar-section sidebar-section--collapsible';
@@ -136,6 +152,7 @@
       var label = favorite ? 'Remove from favourites' : 'Add to favourites';
       button.setAttribute('aria-label', label);
       button.setAttribute('title', label);
+      button.setAttribute('aria-pressed', favorite ? 'true' : 'false');
     }
   }
 
@@ -156,32 +173,33 @@
     body.appendChild(item);
   }
 
-  function handleFavoriteSubmit(event) {
-    var form = event.target;
+  function submitFavoriteForm(form) {
     if (!form || !form.matches || !form.matches(FAVORITE_FORM_SELECTOR)) return;
-
-    event.preventDefault();
-    if (form.dataset.busy === '1') return;
-
     var item = form.closest('[data-project-item]');
     var root = form.closest('[data-project-filter-root]');
     if (!item || !root) return;
     var sourceSection = item.closest('[data-sidebar-collapsible]');
 
+    if (form.dataset.busy === '1') return;
     form.dataset.busy = '1';
-    var submitter = event.submitter || form.querySelector('button[type="submit"]');
+    var submitter = form.querySelector('button[type="submit"]');
     if (submitter) submitter.disabled = true;
 
     var favoriteInput = form.querySelector('input[name="favorite"]');
     var favorite = Boolean(favoriteInput && ['1', 'true', 'on', 'yes'].includes(String(favoriteInput.value || '').toLowerCase()));
 
-    var body = new FormData(form);
+    var body = new URLSearchParams();
+    var formData = new FormData(form);
+    formData.forEach(function(value, key) {
+      body.append(key, String(value));
+    });
     fetch(form.action, {
       method: 'POST',
       body: body,
       credentials: 'same-origin',
       headers: {
         Accept: 'text/html,application/json',
+        'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
       },
     }).then(function(response) {
       if (!response.ok) {
@@ -195,12 +213,32 @@
       if (sourceSection) {
         removeSidebarSectionIfEmpty(sourceSection);
       }
+      refreshSidebarSectionCounts(root);
+      if (typeof root.__projectFilterRefresh === 'function') {
+        root.__projectFilterRefresh();
+      }
     }).catch(function() {
       // Leave the UI unchanged if the request fails.
     }).finally(function() {
       form.dataset.busy = '0';
       if (submitter) submitter.disabled = false;
     });
+  }
+
+  function handleFavoriteSubmit(event) {
+    var form = event.target;
+    if (!form || !form.matches || !form.matches(FAVORITE_FORM_SELECTOR)) return;
+    event.preventDefault();
+    submitFavoriteForm(form);
+  }
+
+  function handleFavoriteClick(event) {
+    var button = event.target && event.target.closest ? event.target.closest('.project-item__pin-btn') : null;
+    if (!button) return;
+    var form = button.closest(FAVORITE_FORM_SELECTOR);
+    if (!form) return;
+    event.preventDefault();
+    submitFavoriteForm(form);
   }
 
   function initSection(section) {
@@ -229,9 +267,11 @@
 
   function init() {
     document.querySelectorAll('[data-sidebar-collapsible]').forEach(initSection);
+    document.querySelectorAll('[data-project-filter-root]').forEach(refreshSidebarSectionCounts);
     if (!window.__opsDashboardFavoriteFormBound) {
       window.__opsDashboardFavoriteFormBound = true;
       document.addEventListener('submit', handleFavoriteSubmit, true);
+      document.addEventListener('click', handleFavoriteClick, true);
     }
   }
 

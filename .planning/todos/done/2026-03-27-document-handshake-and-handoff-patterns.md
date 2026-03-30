@@ -3,7 +3,7 @@ created: 2026-03-27T00:32:42.376Z
 title: Document handshake and handoff patterns
 area: docs
 files:
-  - docs/deployment-vps-wireguard.md
+  - .planning/deployment-vps-wireguard.md
   - README.md
   - src/views/access.ejs
 ---
@@ -33,5 +33,4 @@ Updated files:
 
 - [`README.md`](/home/tom/code/ops-dashboard/README.md)
 - [`.planning/FIPS_NOSTR_BRIDGE.md`](/home/tom/code/ops-dashboard/.planning/FIPS_NOSTR_BRIDGE.md)
-- [`docs/deployment-vps-wireguard.md`](/home/tom/code/ops-dashboard/docs/deployment-vps-wireguard.md)
-
+- [`.planning/deployment-vps-wireguard.md`](/home/tom/code/ops-dashboard/.planning/deployment-vps-wireguard.md)

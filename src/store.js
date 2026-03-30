@@ -599,10 +599,19 @@ function ensureSession(projectId, sessionId, workflowId) {
   } else {
     sessionId = `ses-${uuid().slice(0, 8)}`;
   }
-  const id = sessionId;
+
+  let id = sessionId;
   const t = now();
-  db.prepare('INSERT INTO sessions (id,project_id,workflow_id,title,state,created_at,updated_at) VALUES (?,?,?,?,?,?,?)')
-    .run(id, projectId, workflowId || null, 'Operator Session', 'active', t, t);
+  try {
+    db.prepare('INSERT INTO sessions (id,project_id,workflow_id,title,state,created_at,updated_at) VALUES (?,?,?,?,?,?,?)')
+      .run(id, projectId, workflowId || null, 'Operator Session', 'active', t, t);
+  } catch (err) {
+    const isSessionIdConflict = `${err?.message || ''}`.includes('sessions.id');
+    if (!isSessionIdConflict) throw err;
+    id = `ses-${uuid().slice(0, 8)}`;
+    db.prepare('INSERT INTO sessions (id,project_id,workflow_id,title,state,created_at,updated_at) VALUES (?,?,?,?,?,?,?)')
+      .run(id, projectId, workflowId || null, 'Operator Session', 'active', t, t);
+  }
   return db.prepare('SELECT * FROM sessions WHERE id=?').get(id);
 }
 
@@ -821,15 +830,18 @@ function touchAccessSession(sessionId, patch = {}) {
   const revokedAt = Object.prototype.hasOwnProperty.call(patch, 'revoked_at')
     ? `${patch.revoked_at || ''}`
     : (current.revoked_at || '');
+  const expiresAt = Object.prototype.hasOwnProperty.call(patch, 'expires_at')
+    ? `${patch.expires_at || ''}`
+    : (current.expires_at || '');
   const metadata = Object.prototype.hasOwnProperty.call(patch, 'metadata')
     ? JSON.stringify(patch.metadata || {})
     : JSON.stringify(current.metadata_json || {});
 
   db.prepare(`
     UPDATE access_sessions
-    SET state=?, last_seen_at=?, revoked_at=?, metadata_json=?, updated_at=?
+    SET state=?, expires_at=?, last_seen_at=?, revoked_at=?, metadata_json=?, updated_at=?
     WHERE id=?
-  `).run(state, lastSeenAt, revokedAt, metadata, t, sessionId);
+  `).run(state, expiresAt, lastSeenAt, revokedAt, metadata, t, sessionId);
 
   return getAccessSession(sessionId);
 }

@@ -2,7 +2,7 @@
 
 Vibez is:
 - A self-hosted operator dashboard for multiple OpenClaw-driven projects.
-- A vibe-coded app for building vibe-coded apps.
+- A transport-first control surface for holepunched remote access and project isolation.
 
 What it provides:
 - Project-scoped chat, control, and file-change history.
@@ -12,6 +12,11 @@ What it provides:
 - OpenClaw configuration and runtime controls.
 - Usage, activity, and operational status views.
 - Nostr-based access control.
+- NIP-17 bootstrap/signalling with STUN-based WebRTC peer access.
+- No TURN in the browser access path.
+- Global workspace defaults plus project-scoped backend overrides.
+- `.planning/` markdown for NOW/NEXT/TODO/DECISIONS/LOG/RISKS/CONTEXT.
+- FIPS-aware deployment guidance and explicit transport boundaries.
 
 <img width="580" height="741" alt="image" src="https://github.com/user-attachments/assets/3f068d95-bd95-4c10-b789-81cf75ca713b" />
 
@@ -43,6 +48,7 @@ What it provides:
   - `openclaw` local CLI adapter for the conversation tab
 - Workflow state controls: create/run/pause/continue(done via state set)
 - Persistent storage across restarts
+- SQLite stores runtime conversations/messages/workflows/logs/artifacts/access sessions; `.planning/` carries editable project state.
 - Public access flow with NIP-17 bootstrap, allowlisted pubkeys, and session cookies
 - Browser sign-in options:
   - NIP-07 signer
@@ -53,12 +59,12 @@ What it provides:
 - Recent / favourites / archived project sidebar state persisted in SQLite
 
 ## Current status
-As of 2026-03-28 UTC, the dashboard is still an MVP but the core operator flow is now stable:
+As of 2026-03-30 UTC, the dashboard is still an MVP but the transport and operator flow are now stable:
 
-- Local dashboard runs on Express + EJS + SQLite with persisted projects, sessions, messages, workflows, logs, artifacts, and access sessions.
+- Local dashboard runs on Express + EJS + SQLite with persisted conversations/messages plus workflows, logs, artifacts, and access sessions.
 - Access is locked down to authenticated sessions via NIP-17 bootstrap/signalling, with allowlisted pubkeys and session cookies.
 - Browser sign-in supports NIP-07, Amber / Nostr Connect, and optional `nsec`.
-- The access page now shows a step-by-step startup checklist and a separate client/server status flow.
+- The access path uses WebRTC peer transport with STUN for candidate discovery and no TURN.
 - The home sidebar renders immediately below `Pinned`, with `Recent` limited to the last 48 hours.
 - Project pages use a fixed spatial layout with:
   - left project sidebar
@@ -66,11 +72,11 @@ As of 2026-03-28 UTC, the dashboard is still an MVP but the core operator flow i
   - right expandable recent-changes rail
 - `Conversations` is project-scoped.
 - `OpenClaw Main` is its own separate conversation namespace and does not share history with the project chat tab.
-- The project rail shows expandable file diffs for recent workspace changes.
-- The dashboard has a minimal dark UI with project, usage, and control surfaces still evolving.
+- Global workspace settings hold the backend default; project settings can override the backend per project.
+- `.planning/` markdown is now part of the project state surface for NOW/NEXT/TODO/DECISIONS/LOG/RISKS/CONTEXT.
 - The OpenClaw CLI integration is still local-process based; set `OPENCLAW_BIN` if the binary is not on `PATH`.
 
-For a shorter operational snapshot, see [`docs/status.md`](docs/status.md).
+For a shorter operational snapshot, see [`.planning/STATUS.md`](/home/tom/code/ops-dashboard/.planning/STATUS.md).
 
 ## Run
 ```bash
@@ -108,6 +114,11 @@ The access page supports:
 
 The dashboard itself is protected by access-session middleware; unauthenticated requests are redirected to `/access` or returned `401` for API routes.
 The old HTTP bootstrap and signalling routes remain available for compatibility/debugging, but the default browser flow now uses NIP-17 relay signalling and direct WebRTC peer setup.
+
+### FIPS posture
+- Keep crypto and transport primitives boring: standard TLS, STUN, WebRTC peer transport, and Nostr-based signalling.
+- Do not introduce TURN into the data path.
+- Treat FIPS as a deployment constraint and documentation target, not a blanket compliance claim.
 
 ## Dev
 ```bash
@@ -179,7 +190,7 @@ Response expected:
 - The access route currently defaults to a single allowlisted pubkey for operator access
 
 For the direct relay/WebRTC version of the access flow, see:
-- [`docs/deployment-vps-wireguard.md`](docs/deployment-vps-wireguard.md)
+- [`.planning/deployment-vps-wireguard.md`](/home/tom/code/ops-dashboard/.planning/deployment-vps-wireguard.md)
 
 #### Caddy example
 ```caddy
@@ -219,3 +230,5 @@ server {
 - Separate filesystem path per project
 - No cross-project retrieval route is implemented by default
 - Any future cross-project feature should require explicit operator toggle and audit log entry
+
+:)

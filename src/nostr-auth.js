@@ -25,7 +25,7 @@ const {
 
 const ACCESS_APP = 'ops-dashboard.access.v1';
 const GATEWAY_IDENTITY_PATH = path.join(DATA_DIR, 'access-gateway.json');
-const DEFAULT_ACCESS_TTL_MS = 10 * 60 * 1000;
+const DEFAULT_ACCESS_TTL_MS = 365 * 24 * 60 * 60 * 1000;
 const MAX_CLOCK_SKEW_MS = 5 * 60 * 1000;
 const MAX_BOOTSTRAP_AGE_MS = 30 * 60 * 1000;
 

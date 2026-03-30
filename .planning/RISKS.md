@@ -27,3 +27,11 @@
 7. OpenClaw plugin compat warnings are noisy
 - Risk: deprecation warnings from bundled plugins can obscure real runtime errors.
 - Mitigation: continue migrating bundled plugins away from `openclaw/plugin-sdk/compat` and keep warning filtering in place where appropriate.
+
+8. Transport assumptions can get diluted
+- Risk: TURN or other relay-heavy shortcuts could creep into the remote-access path and weaken the holepunching model.
+- Mitigation: keep STUN documented as the minimum requirement and explicitly reject TURN in the architecture notes.
+
+9. Runtime/editorial state can blur together
+- Risk: if planning notes drift back into SQLite tables, the line between runtime conversations and portable project state gets muddy.
+- Mitigation: keep conversations/messages in SQLite and keep editorial project state in `.planning` markdown.

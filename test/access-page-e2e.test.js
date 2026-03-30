@@ -5,6 +5,7 @@ const vm = require('vm');
 
 function createElement(id) {
   const classNames = new Set();
+  const attributes = new Map();
   return {
     id,
     value: '',
@@ -14,6 +15,7 @@ function createElement(id) {
     style: {},
     rel: '',
     href: '',
+    attributes,
     classList: {
       add(...tokens) {
         tokens.forEach(token => {
@@ -43,6 +45,15 @@ function createElement(id) {
         return classNames.has(token);
       },
     },
+    setAttribute(name, value) {
+      attributes.set(String(name), String(value));
+    },
+    getAttribute(name) {
+      return attributes.has(String(name)) ? attributes.get(String(name)) : null;
+    },
+    removeAttribute(name) {
+      attributes.delete(String(name));
+    },
     listeners: {},
     addEventListener(type, handler) {
       this.listeners[type] = handler;
@@ -69,6 +80,7 @@ function createFakeBrowserHarness() {
     'connect_btn',
     'fetch_btn',
     'session_stage',
+    'access_error',
     'auth_prompt',
     'nsec_value',
     'client_status',
@@ -415,5 +427,55 @@ describe('access page e2e', function() {
 
     assert.equal(harness.getNavigationTarget(), '/');
     assert.match(harness.document.getElementById('client_status').textContent, /WebRTC unavailable/i);
+    assert.match(
+      harness.document.getElementById('access_error').textContent,
+      /continuing with the authenticated dashboard/i,
+    );
+    assert.equal(harness.document.getElementById('access_error').getAttribute('role'), 'status');
+    assert.equal(harness.document.getElementById('access_error').classList.contains('is-notice'), true);
+  });
+
+  it('surfaces bootstrap failures in the error banner', async function() {
+    const harness = createFakeBrowserHarness();
+    const script = fs.readFileSync(path.join(__dirname, '..', 'src/public/access-page.js'), 'utf8');
+
+    class RejectingAccessWebRtcProxy {
+      constructor(options = {}) {
+        this.signalTransport = options.signalTransport || null;
+        this.bootstrapCalls = [];
+      }
+
+      async bootstrap(bootstrapUrl, bootstrapEvent, bootstrapMeta = {}) {
+        this.bootstrapCalls.push({ bootstrapUrl, bootstrapEvent, bootstrapMeta });
+        return {
+          ok: false,
+          type: 'bootstrap_reject',
+          error: 'pubkey_not_allowed',
+        };
+      }
+
+      close() {}
+    }
+
+    const context = vm.createContext({
+      ...harness.window,
+      AccessWebRtcProxy: RejectingAccessWebRtcProxy,
+    });
+    context.window = context;
+    context.document = harness.document;
+    context.navigator = harness.window.navigator;
+    context.crypto = harness.window.crypto;
+    context.AccessWebRtcProxy = RejectingAccessWebRtcProxy;
+    context.FIPS_STUN_URL = harness.window.FIPS_STUN_URL;
+
+    vm.runInContext(script, context, { filename: 'access-page.js' });
+
+    await harness.document.getElementById('nip07_login_btn').click();
+    await new Promise(resolve => setTimeout(resolve, 1200));
+
+    assert.equal(harness.getNavigationTarget(), '');
+    assert.match(harness.document.getElementById('access_error').textContent, /Authentication failed:/i);
+    assert.match(harness.document.getElementById('access_error').textContent, /pubkey not allowed/i);
+    assert.match(harness.document.getElementById('client_status').textContent, /pubkey not allowed/i);
   });
 });

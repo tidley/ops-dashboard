@@ -26,8 +26,18 @@
   <% const projectCodeFolder = projectSettings.code_folder || project.workspace_dir || ''; %>
   <% const projectSubtitle = project.description && !/^Imported from/i.test(project.description) ? project.description : ''; %>
   <% const projectGettingStarted = projectSettings.getting_started || projectSettings.instructions || ''; %>
+  <% const projectBackend = typeof projectBackendSettings !== 'undefined' && projectBackendSettings ? projectBackendSettings : {}; %>
   <% const projectUsageData = typeof projectUsage !== 'undefined' && projectUsage ? projectUsage : null; %>
   <% const latestCommitSnapshot = projectMemory && projectMemory.latestCommit ? projectMemory.latestCommit : null; %>
+  <% const projectWorkspaceBranch = typeof workspaceBranch !== 'undefined' && workspaceBranch ? workspaceBranch : (projectMemory && projectMemory.workspaceBranch ? projectMemory.workspaceBranch : (latestCommitSnapshot && latestCommitSnapshot.branch ? latestCommitSnapshot.branch : '')); %>
+  <% const recentFileSortState = typeof recentFileSort !== 'undefined' && recentFileSort ? String(recentFileSort) : 'recent:desc'; %>
+  <% const recentFileSortParts = recentFileSortState.split(':'); %>
+  <% const recentFileSortKey = recentFileSortParts[0] || 'recent'; %>
+  <% const recentFileSortDirection = recentFileSortParts[1] || (recentFileSortKey === 'recent' ? 'desc' : 'asc'); %>
+  <% const recentFileSortArrow = function(sortKey, direction) {
+       if (sortKey === 'name' || sortKey === 'path') return direction === 'asc' ? '↓' : '↑';
+       return direction === 'asc' ? '↑' : '↓';
+     }; %>
   <% const messageAuthor = function(message) {
        if (message.direction === 'outbound') return 'You';
        const agent = message.agent_id && agentById[message.agent_id] ? agentById[message.agent_id].name : '';
@@ -40,6 +50,53 @@
        if (!value) return '(unknown file)';
        const parts = value.split('/').filter(Boolean);
        return parts.length ? parts[parts.length - 1] : value;
+     }; %>
+  <% const recentFileViewerHref = function(filePath) {
+       return '/project/' + encodeURIComponent(project.id) + '/file?path=' + encodeURIComponent(String(filePath || ''));
+     }; %>
+  <% const truncateChatMessage = function(value) {
+       var text = String(value || '(empty)');
+       if (text.length <= 2500) {
+         return {
+           preview: text,
+           full: text,
+           truncated: false,
+         };
+       }
+       var visibleText = text.slice(0, 2500).replace(/\s+$/, '');
+       return {
+         preview: visibleText + '...',
+         full: text,
+         truncated: true,
+       };
+     }; %>
+  <% const escapeHtml = function(value) {
+       return String(value)
+         .replace(/&/g, '&amp;')
+         .replace(/</g, '&lt;')
+         .replace(/>/g, '&gt;')
+         .replace(/"/g, '&quot;')
+         .replace(/'/g, '&#39;');
+     }; %>
+  <% const renderDiffMarkup = function(value) {
+       const lines = String(value || 'No diff available.').replace(/\r\n?/g, '\n').split('\n');
+       const classify = function(line) {
+         if (!line) return 'blank';
+         if (line.startsWith('diff --git') || line.startsWith('index ') || line.startsWith('Binary files')) return 'header';
+         if (line.startsWith('--- ')) return 'del-file';
+         if (line.startsWith('+++ ')) return 'add-file';
+         if (line.startsWith('@@')) return 'hunk';
+         if (line.startsWith('+') && !line.startsWith('+++')) return 'add';
+         if (line.startsWith('-') && !line.startsWith('---')) return 'del';
+         if (line.startsWith('\\ ')) return 'meta';
+         return 'context';
+       };
+
+       return lines.map(function(line) {
+         const kind = classify(line);
+         const text = line ? escapeHtml(line) : '&nbsp;';
+         return '<span class="recent-file-diff-line recent-file-diff-line--' + kind + '">' + text + '</span>';
+       }).join('');
      }; %>
   <% const recentFiles = (() => {
        const fileChanges = (typeof recentFileChanges !== 'undefined' && Array.isArray(recentFileChanges)) ? recentFileChanges : [];
@@ -87,6 +144,7 @@
         <section class="sidebar-section sidebar-section--collapsible" data-sidebar-collapsible data-sidebar-section-key="favourites" data-project-section>
           <button type="button" class="sidebar-section__titlebar" data-sidebar-collapse aria-expanded="true">
             <span class="sidebar-section__title">Pinned</span>
+            <span class="sidebar-section__count">(<%= favouriteProjects.length %>)</span>
             <span class="sidebar-section__chevron" aria-hidden="true">▾</span>
           </button>
           <div class="project-list" data-project-group data-sidebar-body>
@@ -126,6 +184,7 @@
         <section class="sidebar-section sidebar-section--collapsible" data-sidebar-collapsible data-sidebar-section-key="recent" data-project-section>
           <button type="button" class="sidebar-section__titlebar" data-sidebar-collapse aria-expanded="true">
             <span class="sidebar-section__title">Recent</span>
+            <span class="sidebar-section__count">(<%= sidebarGroups.recent.length %>)</span>
             <span class="sidebar-section__chevron" aria-hidden="true">▾</span>
           </button>
           <div class="project-list" data-project-group data-sidebar-body>
@@ -164,6 +223,7 @@
       <section class="sidebar-section sidebar-section--collapsible" data-sidebar-collapsible data-sidebar-section-key="projects" data-project-section>
         <button type="button" class="sidebar-section__titlebar" data-sidebar-collapse aria-expanded="true">
           <span class="sidebar-section__title">Projects</span>
+          <span class="sidebar-section__count">(<%= (sidebarGroups.general || []).length %>)</span>
           <span class="sidebar-section__chevron" aria-hidden="true">▾</span>
         </button>
         <div class="project-list" data-project-group data-sidebar-body>
@@ -202,6 +262,7 @@
         <section class="sidebar-section sidebar-section--collapsible" data-sidebar-collapsible data-sidebar-section-key="archived" data-project-section>
           <button type="button" class="sidebar-section__titlebar" data-sidebar-collapse aria-expanded="true">
             <span class="sidebar-section__title">Archived</span>
+            <span class="sidebar-section__count">(<%= archivedProjects.length %>)</span>
             <span class="sidebar-section__chevron" aria-hidden="true">▾</span>
           </button>
           <div class="project-list" data-project-group data-sidebar-body>
@@ -240,17 +301,18 @@
           <h1><%= project.name %></h1>
         </div>
         <div class="topbar__meta">
+          <button type="button" class="btn sidebar-toggle" data-sidebar-toggle aria-controls="project_sidebar" aria-expanded="false">Projects</button>
+          <a class="btn" href="/settings">Settings</a>
           <a class="btn <%= activeTab === 'main-agent' ? 'btn-primary' : '' %>" data-openclaw-main-switch href="<%= mainAgentHref %>">OpenClaw Main</a>
           <form method="post" action="/logout" class="topbar__logout-form">
             <button type="submit" class="btn btn-danger">Logout</button>
           </form>
-          <a class="btn" href="/settings">Settings</a>
         </div>
       </header>
 
       <nav class="tabs" aria-label="Project sections">
-        <% projectTabs.forEach(function(tab) { %>
-          <a class="tab <%= activeTab === tab ? 'tab--active' : '' %> <%= tab === 'conversations' || tab === 'main-agent' ? 'tab--chat' : 'tab--utility' %>" href="<%= tabHref(tab) %>"><%= tabLabels[tab] || tab %></a>
+        <% projectTabs.filter(tab => tab !== 'main-agent').forEach(function(tab) { %>
+          <a class="tab <%= activeTab === tab ? 'tab--active' : '' %> <%= tab === 'conversations' ? 'tab--chat' : 'tab--utility' %>" href="<%= tabHref(tab) %>"><%= tabLabels[tab] || tab %></a>
         <% }) %>
       </nav>
 
@@ -269,6 +331,14 @@
             <div>
               <span>Project folder</span>
               <code><%= projectCodeFolder || 'local project' %></code>
+            </div>
+            <div>
+              <span>Current branch</span>
+              <code><%= projectWorkspaceBranch || 'Unknown' %></code>
+            </div>
+            <div>
+              <span>Agent backend</span>
+              <code><%= projectBackend.effectiveBackend || 'openclaw-proxy' %><%= projectBackend.source ? ' · ' + projectBackend.source : '' %></code>
             </div>
             <div>
               <span>Last commit</span>
@@ -337,8 +407,18 @@
                     aria-hidden="true"
                   >
                     <div class="recent-file-item__detail-panel">
-                      <code class="recent-file-item__detail-path recent-file-item__detail-path--full"><%= item.file_path %></code>
-                      <pre class="recent-file-item__detail-body recent-file-item__detail-body--diff"><%= item.change_detail || 'No diff available.' %></pre>
+                      <div class="recent-file-item__detail-head">
+                        <code class="recent-file-item__detail-path recent-file-item__detail-path--full"><%= item.file_path %></code>
+                        <a
+                          class="btn recent-file-item__open-file-btn"
+                          href="<%= recentFileViewerHref(item.file_path) %>"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          aria-label="Open full file"
+                          title="Open full file"
+                        >↗</a>
+                      </div>
+                      <div class="recent-file-item__detail-body recent-file-item__detail-body--diff"><%- renderDiffMarkup(item.change_detail || 'No diff available.') %></div>
                     </div>
                   </div>
                 </div>
@@ -403,16 +483,18 @@
                 <% messages.forEach(function(message) { %>
                   <% const isOutbound = message.direction === 'outbound'; %>
                   <% const messageText = message.content || '(empty)'; %>
-                  <% const messagePreview = messageText.length > 2500 ? messageText.slice(0, 2500).replace(/\s+$/, '') : ''; %>
+                  <% const truncatedMessage = truncateChatMessage(messageText); %>
                   <article class="chat-row <%= isOutbound ? 'chat-row--outbound' : 'chat-row--inbound' %>" data-message-id="<%= message.id %>">
                     <div class="chat-row__content">
                       <div class="chat-bubble">
-                        <pre class="chat-bubble__body <%= messageText.length > 2500 ? 'chat-bubble__body--preview' : '' %>"><%= messagePreview ? messagePreview + '...' : messageText %></pre>
-                        <% if (messageText.length > 2500) { %>
-                          <details class="chat-bubble__details chat-bubble__details--message">
-                            <summary class="chat-bubble__summary">show more</summary>
-                            <pre class="chat-bubble__body chat-bubble__body--full"><%= messageText %></pre>
-                          </details>
+                        <% if (truncatedMessage.truncated) { %>
+                          <div class="chat-bubble__message-expander" data-message-expander data-expanded="false">
+                            <pre class="chat-bubble__body chat-bubble__body--preview" data-message-preview><%= truncatedMessage.preview %></pre>
+                            <pre class="chat-bubble__body chat-bubble__body--full" data-message-full hidden><%= truncatedMessage.full %></pre>
+                            <button type="button" class="chat-bubble__summary" data-message-toggle aria-expanded="false">show more</button>
+                          </div>
+                        <% } else { %>
+                          <pre class="chat-bubble__body"><%= truncatedMessage.preview %></pre>
                         <% } %>
                         <% if (message.error_text) { %>
                           <details class="chat-bubble__details chat-bubble__details--error">
@@ -661,6 +743,29 @@
               </div>
 
               <div class="field">
+                <label for="backend_override">Backend override</label>
+                <select id="backend_override" name="backend_override">
+                  <option value="inherit" <%= (projectSettings.backend_override || projectSettings.backendOverride || 'inherit') === 'inherit' ? 'selected' : '' %>>inherit global</option>
+                  <option value="openclaw-proxy" <%= (projectSettings.backend_override || projectSettings.backendOverride) === 'openclaw-proxy' ? 'selected' : '' %>>openclaw-proxy</option>
+                  <option value="direct-codex" <%= (projectSettings.backend_override || projectSettings.backendOverride) === 'direct-codex' ? 'selected' : '' %>>direct-codex</option>
+                  <option value="direct-opencode" <%= (projectSettings.backend_override || projectSettings.backendOverride) === 'direct-opencode' ? 'selected' : '' %>>direct-opencode</option>
+                  <option value="routstr" <%= (projectSettings.backend_override || projectSettings.backendOverride) === 'routstr' ? 'selected' : '' %>>routstr</option>
+                </select>
+                <div class="field__hint">Projects inherit the global backend by default. Choose a backend here to override just this project.</div>
+              </div>
+
+              <div class="grid grid--two">
+                <div class="field">
+                  <label for="routstr_provider">Routstr provider</label>
+                  <input id="routstr_provider" name="routstr_provider" type="text" value="<%= projectSettings.routstr_provider || projectSettings.routstrProvider || '' %>" placeholder="provider name" spellcheck="false" />
+                </div>
+                <div class="field">
+                  <label for="routstr_model">Routstr model</label>
+                  <input id="routstr_model" name="routstr_model" type="text" value="<%= projectSettings.routstr_model || projectSettings.routstrModel || '' %>" placeholder="model name" spellcheck="false" />
+                </div>
+              </div>
+
+              <div class="field">
                 <label for="getting_started">Instructions how to get going</label>
                 <textarea id="getting_started" name="getting_started" rows="8" spellcheck="false" placeholder="Tell the agent how to get started..."><%= projectGettingStarted %></textarea>
                 <div class="field__hint">These instructions are included in the agent prompt for this project. Folder filters are managed in Settings.</div>
@@ -690,7 +795,15 @@
 
               <div class="settings-wizard__step">
                 <div class="settings-wizard__step-head">
-                  <strong>2. Getting started</strong>
+                  <strong>2. Backend override</strong>
+                  <button id="wizard_fill_backend_btn" class="btn btn-tab btn-tab--compact" type="button">Use inherited backend</button>
+                </div>
+                <p>Keep this project on the global backend, or explicitly choose a backend just for this project.</p>
+              </div>
+
+              <div class="settings-wizard__step">
+                <div class="settings-wizard__step-head">
+                  <strong>3. Getting started</strong>
                   <button id="wizard_fill_instructions_btn" class="btn btn-tab btn-tab--compact" type="button">Starter instructions</button>
                 </div>
                 <p>Write a short prompt for how the agent should begin work in this project.</p>
@@ -724,23 +837,23 @@
         </div>
 
         <aside class="card project-rail sidebar-section sidebar-section--collapsible" data-project-rail data-sidebar-collapsible data-sidebar-default-collapsed="true" data-sidebar-section-key="workspace-changes">
-          <button type="button" class="sidebar-collapse-tab project-rail__toggle" data-sidebar-collapse aria-expanded="true" aria-label="Latest changes" title="Latest changes">
+          <button type="button" class="sidebar-collapse-tab project-rail__toggle" data-sidebar-collapse aria-expanded="true" aria-label="Live changes" title="Live changes">
             <span class="sidebar-collapse-tab__icon" aria-hidden="true">
               <span></span>
               <span></span>
               <span></span>
             </span>
           </button>
+          <div class="project-rail__resize-handle" data-project-rail-resize-handle aria-hidden="true"></div>
           <div class="project-rail__body" data-sidebar-body>
             <div class="sidebar-scroll project-rail__scroll" data-project-rail-scroll>
             <% if (activeTab === 'main-agent' && hasMainAgentInfo) { %>
               <div class="project-rail__section">
-                <div class="card__header card__header--compact">
-                  <div>
-                    <div class="eyebrow">OpenClaw Main</div>
-                    <h2>Agent details</h2>
+                <div class="project-rail__header">
+                  <div class="project-rail__heading">
+                    <h2>OpenClaw Main</h2>
+                    <div class="project-rail__count">Agent details</div>
                   </div>
-                  <span class="badge badge-accent"><%= hasMainStateInfo && mainState.openclaw_session_id ? 'live' : 'idle' %></span>
                 </div>
 
                 <div class="mini-list mini-list--compact">
@@ -800,17 +913,59 @@
             <% } %>
             <% if (activeTab !== 'main-agent') { %>
               <div class="project-rail__section">
-                <div class="card__header card__header--compact project-rail__header">
+                <div class="project-rail__header">
                   <div class="project-rail__heading">
-                    <h2>Latest changes   </h2>
-                    <div class="project-rail__count"><%= recentFiles.length %> items</div>
+                    <h2>Live changes</h2>
+                    <div class="project-rail__count" data-recent-files-count><%= recentFiles.length %> items</div>
+                  </div>
+                  <div class="project-rail__meta">
+                    <div class="project-rail__sort-row">
+                      <div class="project-rail__sorts" role="tablist" aria-label="Sort recent files">
+                        <button
+                          type="button"
+                          class="btn-tab project-rail__sort-button"
+                          data-recent-files-sort-option="recent"
+                          data-recent-files-sort-default="desc"
+                          aria-selected="<%= recentFileSortKey === 'recent' ? 'true' : 'false' %>"
+                        >
+                          <span class="project-rail__sort-label">Recent</span>
+                          <span class="project-rail__sort-arrow" data-recent-files-sort-arrow aria-hidden="true"><%= recentFileSortKey === 'recent' ? recentFileSortArrow('recent', recentFileSortDirection) : '' %></span>
+                        </button>
+                        <button
+                          type="button"
+                          class="btn-tab project-rail__sort-button"
+                          data-recent-files-sort-option="name"
+                          data-recent-files-sort-default="asc"
+                          aria-selected="<%= recentFileSortKey === 'name' ? 'true' : 'false' %>"
+                        >
+                          <span class="project-rail__sort-label">Name</span>
+                          <span class="project-rail__sort-arrow" data-recent-files-sort-arrow aria-hidden="true"><%= recentFileSortKey === 'name' ? recentFileSortArrow('name', recentFileSortDirection) : '' %></span>
+                        </button>
+                        <button
+                          type="button"
+                          class="btn-tab project-rail__sort-button"
+                          data-recent-files-sort-option="path"
+                          data-recent-files-sort-default="asc"
+                          aria-selected="<%= recentFileSortKey === 'path' ? 'true' : 'false' %>"
+                        >
+                          <span class="project-rail__sort-label">Relative</span>
+                          <span class="project-rail__sort-arrow" data-recent-files-sort-arrow aria-hidden="true"><%= recentFileSortKey === 'path' ? recentFileSortArrow('path', recentFileSortDirection) : '' %></span>
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
-                <% if (recentFiles.length) { %>
-                  <div class="recent-files-shell recent-files-shell--rail" data-recent-files-root>
-                    <div class="artifact-list artifact-list--compact recent-files-list">
-                    <% recentFiles.forEach(function(item, index) { %>
+                <div
+                  class="recent-files-shell recent-files-shell--rail"
+                  data-recent-files-root
+                  data-recent-files-url="/api/project/<%= project.id %>/recent-files"
+                  data-recent-files-sort="<%= recentFileSortState %>"
+                  data-recent-files-tab="<%= activeTab %>"
+                  data-recent-files-limit="25"
+                >
+                  <div class="artifact-list artifact-list--compact recent-files-list" data-recent-files-list <%= recentFiles.length ? '' : 'hidden' %>>
+                  <% recentFiles.forEach(function(item, index) { %>
                       <div
                         class="recent-file-item"
                         data-recent-file-item
@@ -853,20 +1008,28 @@
                           aria-hidden="true"
                         >
                           <div class="recent-file-item__detail-panel">
-                            <code class="recent-file-item__detail-path recent-file-item__detail-path--full"><%= item.file_path %></code>
-                            <pre class="recent-file-item__detail-body recent-file-item__detail-body--diff"><%= item.change_detail || 'No diff available.' %></pre>
+                            <div class="recent-file-item__detail-head">
+                              <code class="recent-file-item__detail-path recent-file-item__detail-path--full"><%= item.file_path %></code>
+                              <a
+                                class="btn recent-file-item__open-file-btn"
+                                href="<%= recentFileViewerHref(item.file_path) %>"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                aria-label="Open full file"
+                                title="Open full file"
+                              >↗</a>
+                            </div>
+                            <div class="recent-file-item__detail-body recent-file-item__detail-body--diff"><%- renderDiffMarkup(item.change_detail || 'No diff available.') %></div>
                           </div>
                         </div>
                       </div>
                     <% }) %>
-                    </div>
                   </div>
-                <% } else { %>
-                  <div class="empty-state empty-state--compact">
+                  <div class="empty-state empty-state--compact" data-recent-files-empty <%= recentFiles.length ? 'hidden' : '' %>>
                     <strong>No recent files.</strong>
                     <p>Workspace changes and recent artifacts appear here.</p>
                   </div>
-                <% } %>
+                </div>
               </div>
             <% } else if (!hasMainAgentInfo) { %>
               <div class="project-rail__section">
@@ -897,6 +1060,7 @@
   </script>
   <script src="/public/sidebar-sections.js" defer></script>
   <script src="/public/home-usage.js" defer></script>
+  <script src="/public/settings-page.js" defer></script>
   <script src="/public/project-page.js" defer></script>
   <script src="/public/pwa-register.js" defer></script>
 </body>

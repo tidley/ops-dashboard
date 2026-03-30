@@ -17,6 +17,10 @@
   <% const subfolders = Array.isArray(settings.subfolders) ? settings.subfolders : []; %>
   <% const ignoreFolders = Array.isArray(settings.ignoreFolders) ? settings.ignoreFolders : []; %>
   <% const gettingStarted = settings.gettingStarted || settings.getting_started || settings.instructions || ''; %>
+  <% const agentBackend = settings.agentBackend || settings.agent_backend || 'openclaw-proxy'; %>
+  <% const routstrProvider = settings.routstrProvider || settings.routstr_provider || ''; %>
+  <% const routstrModel = settings.routstrModel || settings.routstr_model || ''; %>
+  <% const backendOptions = ['openclaw-proxy', 'direct-codex', 'direct-opencode', 'routstr']; %>
 
   <div class="shell">
     <aside class="sidebar">
@@ -106,6 +110,27 @@
               <div class="field__hint">These instructions are included in the agent prompt for all projects using these defaults.</div>
             </div>
 
+            <div class="field">
+              <label for="agent_backend">Agent backend default</label>
+              <select id="agent_backend" name="agent_backend">
+                <% backendOptions.forEach(function(option) { %>
+                  <option value="<%= option %>" <%= agentBackend === option ? 'selected' : '' %>><%= option %></option>
+                <% }) %>
+              </select>
+              <div class="field__hint">Project overrides can still select a different backend. `openclaw-proxy` stays the safe fallback.</div>
+            </div>
+
+            <div class="grid grid--two">
+              <div class="field">
+                <label for="routstr_provider">Routstr provider</label>
+                <input id="routstr_provider" name="routstr_provider" type="text" value="<%= routstrProvider %>" placeholder="provider name" spellcheck="false" />
+              </div>
+              <div class="field">
+                <label for="routstr_model">Routstr model</label>
+                <input id="routstr_model" name="routstr_model" type="text" value="<%= routstrModel %>" placeholder="model name" spellcheck="false" />
+              </div>
+            </div>
+
             <div class="actions">
               <button class="btn btn-primary" type="submit">Save settings</button>
             </div>
@@ -146,7 +171,15 @@
 
             <div class="settings-wizard__step">
               <div class="settings-wizard__step-head">
-                <strong>4. Getting started</strong>
+                <strong>4. Agent backend</strong>
+                <button id="wizard_fill_backend_btn" class="btn btn-tab btn-tab--compact" type="button">Use safe fallback</button>
+              </div>
+              <p>Choose the default backend for projects. `routstr` can be paired with provider and model fields.</p>
+            </div>
+
+            <div class="settings-wizard__step">
+              <div class="settings-wizard__step-head">
+                <strong>5. Getting started</strong>
                 <button id="wizard_fill_instructions_btn" class="btn btn-tab btn-tab--compact" type="button">Starter instructions</button>
               </div>
               <p>Write a short prompt for how the agent should begin work in new projects.</p>

@@ -2,6 +2,7 @@ const assert = require('assert');
 const {
   getProjectFolderSettings,
   normalizeFolderListField,
+  resolveAgentBackendSettings,
   shouldIncludeRecentFile,
   summarizeProjectFolderSettings,
   buildProjectSettingsWizard,
@@ -69,6 +70,10 @@ describe('project settings helpers', function() {
 
     const wizard = buildProjectSettingsWizard(project, globalSettings);
     assert.equal(wizard.codeFolder, '/definitely/does/not/exist');
+    assert.equal(wizard.backendOverride, 'inherit');
+    assert.equal(wizard.agentBackend, 'openclaw-proxy');
+    assert.equal(wizard.routstrProvider, '');
+    assert.equal(wizard.routstrModel, '');
     assert.ok(!('suggestedSubfolders' in wizard));
     assert.match(wizard.starterInstructions, /Start by reading/);
 
@@ -76,7 +81,43 @@ describe('project settings helpers', function() {
     assert.equal(globalWizard.codeFolder, '/global/workspace');
     assert.deepEqual(globalWizard.subfolders, ['pave', 'sec']);
     assert.deepEqual(globalWizard.ignoreFolders, ['node_modules', 'dist']);
+    assert.equal(globalWizard.agentBackend, 'openclaw-proxy');
+    assert.equal(globalWizard.routstrProvider, '');
+    assert.equal(globalWizard.routstrModel, '');
     assert.ok(Array.isArray(globalWizard.suggestedSubfolders));
     assert.ok(Array.isArray(globalWizard.commonIgnoreFolders));
+  });
+
+  it('resolves the agent backend with project override first and safe fallback last', function() {
+    const globalSettings = {
+      agent_backend: 'direct-opencode',
+      routstr_provider: 'openrouter',
+      routstr_model: 'claude',
+    };
+    const inherited = resolveAgentBackendSettings({
+      settings_json: {
+        backend_override: 'inherit',
+      },
+    }, globalSettings);
+    assert.equal(inherited.effectiveBackend, 'direct-opencode');
+    assert.equal(inherited.source, 'global');
+    assert.equal(inherited.routstrProvider, 'openrouter');
+    assert.equal(inherited.routstrModel, 'claude');
+
+    const overridden = resolveAgentBackendSettings({
+      settings_json: {
+        backend_override: 'direct-codex',
+      },
+    }, globalSettings);
+    assert.equal(overridden.effectiveBackend, 'direct-codex');
+    assert.equal(overridden.source, 'project');
+
+    const fallback = resolveAgentBackendSettings({
+      settings_json: {
+        backend_override: 'inherit',
+      },
+    }, {});
+    assert.equal(fallback.effectiveBackend, 'openclaw-proxy');
+    assert.equal(fallback.source, 'fallback');
   });
 });

@@ -4,6 +4,21 @@ function toText(value) {
   return `${value ?? ''}`.trim();
 }
 
+const AGENT_BACKEND_VALUES = new Set([
+  'openclaw-proxy',
+  'direct-codex',
+  'direct-opencode',
+  'routstr',
+]);
+
+function normalizeAgentBackendChoice(value, fallback = 'openclaw-proxy') {
+  const text = `${value ?? ''}`.trim().toLowerCase().replace(/\s+/g, '-');
+  if (!text) return fallback;
+  if (text === 'inherit' || text === 'global' || text === 'global-default') return 'inherit';
+  if (AGENT_BACKEND_VALUES.has(text)) return text;
+  return fallback;
+}
+
 function normalizeFolderPath(value) {
   return toText(value)
     .replace(/\\/g, '/')
@@ -37,6 +52,18 @@ function normalizeWorkspaceSettings(settings = {}) {
     subfolders: normalizeFolderListField(raw.subfolders || raw.code_subfolders || []),
     ignoreFolders: normalizeFolderListField(raw.ignore_folders || raw.ignored_folders || []),
     gettingStarted: toText(raw.getting_started || raw.instructions || ''),
+    agentBackend: normalizeAgentBackendChoice(raw.agent_backend || raw.agentBackend || '', ''),
+    routstrProvider: toText(raw.routstr_provider || raw.routstrProvider || ''),
+    routstrModel: toText(raw.routstr_model || raw.routstrModel || ''),
+  };
+}
+
+function normalizeProjectBackendSettings(settings = {}) {
+  const raw = settings && typeof settings === 'object' ? settings : {};
+  return {
+    backendOverride: normalizeAgentBackendChoice(raw.backend_override || raw.backendOverride || '', 'inherit'),
+    routstrProvider: toText(raw.routstr_provider || raw.routstrProvider || ''),
+    routstrModel: toText(raw.routstr_model || raw.routstrModel || ''),
   };
 }
 
@@ -52,6 +79,31 @@ function getProjectFolderSettings(project, globalSettings = {}) {
     subfolders,
     ignoreFolders,
     gettingStarted,
+  };
+}
+
+function resolveAgentBackendSettings(project, globalSettings = {}) {
+  const projectBackendSettings = normalizeProjectBackendSettings(project?.settings_json || {});
+  const projectWorkspaceSettings = normalizeWorkspaceSettings(project?.settings_json || {});
+  const globalWorkspaceSettings = normalizeWorkspaceSettings(globalSettings || {});
+
+  const globalDefault = AGENT_BACKEND_VALUES.has(globalWorkspaceSettings.agentBackend)
+    ? globalWorkspaceSettings.agentBackend
+    : 'openclaw-proxy';
+  const projectOverride = projectBackendSettings.backendOverride;
+  const effectiveBackend = projectOverride && projectOverride !== 'inherit'
+    ? projectOverride
+    : globalDefault;
+
+  return {
+    effectiveBackend,
+    source: projectOverride && projectOverride !== 'inherit'
+      ? 'project'
+      : (globalWorkspaceSettings.agentBackend ? 'global' : 'fallback'),
+    projectOverride,
+    globalDefault,
+    routstrProvider: projectBackendSettings.routstrProvider || projectWorkspaceSettings.routstrProvider || globalWorkspaceSettings.routstrProvider || '',
+    routstrModel: projectBackendSettings.routstrModel || projectWorkspaceSettings.routstrModel || globalWorkspaceSettings.routstrModel || '',
   };
 }
 
@@ -98,6 +150,7 @@ function buildGlobalSettingsWizard(settings = {}) {
 
   return {
     ...workspaceSettings,
+    agentBackend: workspaceSettings.agentBackend || 'openclaw-proxy',
     suggestedSubfolders: suggestions,
     commonIgnoreFolders: ['node_modules', 'dist', 'build', 'coverage', '.git', '.cache', 'tmp'],
     starterInstructions: [
@@ -111,8 +164,13 @@ function buildGlobalSettingsWizard(settings = {}) {
 
 function buildProjectSettingsWizard(project, globalSettings = {}) {
   const settings = getProjectFolderSettings(project, globalSettings);
+  const backendSettings = resolveAgentBackendSettings(project, globalSettings);
   return {
     codeFolder: settings.codeFolder,
+    backendOverride: backendSettings.projectOverride,
+    agentBackend: backendSettings.effectiveBackend,
+    routstrProvider: backendSettings.routstrProvider,
+    routstrModel: backendSettings.routstrModel,
     starterInstructions: [
       'Start by reading the repository README and the project settings.',
       'Focus on the configured code folder first.',
@@ -138,7 +196,10 @@ module.exports = {
   buildProjectSettingsWizard,
   getProjectFolderSettings,
   normalizeFolderListField,
+  normalizeAgentBackendChoice,
+  normalizeProjectBackendSettings,
   normalizeWorkspaceSettings,
+  resolveAgentBackendSettings,
   shouldIncludeRecentFile,
   summarizeProjectFolderSettings,
 };

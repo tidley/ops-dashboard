@@ -68,6 +68,7 @@ describe('recent file changes', function() {
     assert.match(changes[0].change_detail, /Working tree/);
     assert.match(changes[0].change_detail, /@@/);
     assert.match(changes[0].change_detail, /\+world/);
+    assert.doesNotMatch(changes[0].change_detail, /Truncated/);
   });
 
   it('captures the latest commit snapshot with changed files and diffs', function() {
@@ -84,5 +85,39 @@ describe('recent file changes', function() {
     assert.equal(snapshot.files[0].file_path, 'README.md');
     assert.match(snapshot.files[0].change_detail, /Working tree|@@/);
     assert.match(snapshot.files[0].change_detail, /\+beta/);
+    assert.doesNotMatch(snapshot.files[0].change_detail, /Truncated/);
+  });
+
+  it('sorts recent file changes by recent, name, and relative path in both directions', function() {
+    const items = [
+      { file_path: 'zeta/omega.md', updated_at: '2026-03-27T10:00:00.000Z' },
+      { file_path: 'alpha/readme.md', updated_at: '2026-03-27T12:00:00.000Z' },
+      { file_path: 'alpha/notes.md', updated_at: '2026-03-27T11:00:00.000Z' },
+    ];
+
+    assert.deepEqual(
+      app.sortRecentFileChanges(items, 'recent:desc').map(item => item.file_path),
+      ['alpha/readme.md', 'alpha/notes.md', 'zeta/omega.md'],
+    );
+    assert.deepEqual(
+      app.sortRecentFileChanges(items, 'recent:asc').map(item => item.file_path),
+      ['zeta/omega.md', 'alpha/notes.md', 'alpha/readme.md'],
+    );
+    assert.deepEqual(
+      app.sortRecentFileChanges(items, 'name:asc').map(item => item.file_path),
+      ['alpha/notes.md', 'zeta/omega.md', 'alpha/readme.md'],
+    );
+    assert.deepEqual(
+      app.sortRecentFileChanges(items, 'name:desc').map(item => item.file_path),
+      ['alpha/readme.md', 'zeta/omega.md', 'alpha/notes.md'],
+    );
+    assert.deepEqual(
+      app.sortRecentFileChanges(items, 'path:asc').map(item => item.file_path),
+      ['alpha/notes.md', 'alpha/readme.md', 'zeta/omega.md'],
+    );
+    assert.deepEqual(
+      app.sortRecentFileChanges(items, 'path:desc').map(item => item.file_path),
+      ['zeta/omega.md', 'alpha/readme.md', 'alpha/notes.md'],
+    );
   });
 });

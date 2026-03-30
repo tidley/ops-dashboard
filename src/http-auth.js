@@ -7,6 +7,15 @@ const PUBLIC_PATHS = [
 const PUBLIC_PREFIXES = [
   '/public/',
 ];
+const DEFAULT_ACCESS_SESSION_TTL_MS = 365 * 24 * 60 * 60 * 1000;
+
+function resolveAccessSessionTtlMs() {
+  const raw = Number(process.env.ACCESS_SESSION_TTL_MS || DEFAULT_ACCESS_SESSION_TTL_MS);
+  if (!Number.isFinite(raw) || raw < 60 * 60 * 1000) {
+    return DEFAULT_ACCESS_SESSION_TTL_MS;
+  }
+  return Math.round(raw);
+}
 
 function nowMs() {
   return Date.now();
@@ -75,6 +84,8 @@ function createRequireAccess({ store }) {
     throw new Error('store with getAccessSession is required');
   }
 
+  const accessSessionTtlMs = resolveAccessSessionTtlMs();
+
   return function requireAccess(req, res, next) {
     const pathname = req.path || req.originalUrl || req.url || '';
     if (isPathPublic(pathname)) return next();
@@ -101,18 +112,28 @@ function createRequireAccess({ store }) {
     }
 
     req.accessSession = session;
+
+    if (typeof store.touchAccessSession === 'function') {
+      const refreshedExpiresAt = new Date(nowMs() + accessSessionTtlMs).toISOString();
+      store.touchAccessSession(session.id, {
+        last_seen_at: new Date().toISOString(),
+        expires_at: refreshedExpiresAt,
+      });
+    }
+
     return next();
   };
 }
 
 function accessCookieOptions(req = {}) {
+  const maxAge = resolveAccessSessionTtlMs();
   const secure = Boolean(req.secure || `${req.get ? req.get('x-forwarded-proto') : req.headers?.['x-forwarded-proto'] || ''}`.toLowerCase().includes('https'));
   return {
     httpOnly: true,
     sameSite: 'lax',
     secure,
     path: '/',
-    maxAge: 10 * 60 * 1000,
+    maxAge,
   };
 }
 

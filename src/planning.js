@@ -32,6 +32,10 @@ function readPlanningBundle(dir, scope) {
     backlog: readDoc(dir, 'BACKLOG.md'),
     risks: readDoc(dir, 'RISKS.md'),
     status: readDoc(dir, 'STATUS.md'),
+    todo: readDoc(dir, 'TODO.md'),
+    decisions: readDoc(dir, 'DECISIONS.md'),
+    log: readDoc(dir, 'LOG.md'),
+    context: readDoc(dir, 'CONTEXT.md'),
   };
 }
 
@@ -159,6 +163,10 @@ function loadPlanningContext({
     next: mergeTaskBlocks(documents, 'next'),
     backlog: mergeTaskBlocks(documents, 'backlog'),
     risks: mergeTaskBlocks(documents, 'risks'),
+    todo: documents.flatMap(doc => (doc.todo || '').trim() ? [{ scope: doc.scope, text: doc.todo }] : []),
+    decisions: documents.flatMap(doc => (doc.decisions || '').trim() ? [{ scope: doc.scope, text: doc.decisions }] : []),
+    log: documents.flatMap(doc => (doc.log || '').trim() ? [{ scope: doc.scope, text: doc.log }] : []),
+    context: documents.flatMap(doc => (doc.context || '').trim() ? [{ scope: doc.scope, text: doc.context }] : []),
     sources: documents.map(doc => ({
       scope: doc.scope,
       rootDir: doc.rootDir,

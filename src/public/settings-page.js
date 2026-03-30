@@ -2,7 +2,7 @@
   'use strict';
 
   function getWizard() {
-    return window.GLOBAL_SETTINGS_WIZARD || {};
+    return window.PROJECT_SETTINGS_WIZARD || window.GLOBAL_SETTINGS_WIZARD || {};
   }
 
   function getField(id) {
@@ -26,6 +26,7 @@
     var codeFolderBtn = document.getElementById('wizard_use_code_folder_btn');
     var subfoldersBtn = document.getElementById('wizard_fill_subfolders_btn');
     var ignoresBtn = document.getElementById('wizard_fill_ignores_btn');
+    var backendBtn = document.getElementById('wizard_fill_backend_btn');
     var instructionsBtn = document.getElementById('wizard_fill_instructions_btn');
 
     if (codeFolderBtn) {
@@ -45,6 +46,19 @@
       ignoresBtn.addEventListener('click', function() {
         var commonIgnoreFolders = Array.isArray(wizard.commonIgnoreFolders) ? wizard.commonIgnoreFolders : [];
         setFieldValue('ignore_folders', commonIgnoreFolders.join('\n'));
+      });
+    }
+
+    if (backendBtn) {
+      backendBtn.addEventListener('click', function() {
+        if (getField('backend_override')) {
+          setFieldValue('backend_override', 'inherit');
+        }
+        if (getField('agent_backend')) {
+          setFieldValue('agent_backend', 'openclaw-proxy');
+        }
+        setFieldValue('routstr_provider', '');
+        setFieldValue('routstr_model', '');
       });
     }
 

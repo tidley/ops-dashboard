@@ -23,3 +23,6 @@
 - 2026-03-27 UTC: Added a dedicated global workspace settings page and wizard backed by `app_settings`.
 - 2026-03-27 UTC: Added a home-page OpenClaw control island with live stats and model/gateway controls.
 - 2026-03-27 UTC: Kept OpenClaw Main as a separate hidden namespace from project conversations.
+- 2026-03-30 UTC: Added project/global agent-backend settings with runtime resolution and a safe `openclaw-proxy` fallback.
+- 2026-03-30 UTC: Added `.planning/TODO.md` and `.planning/CONTEXT.md` and expanded planning prompts to read them.
+- 2026-03-30 UTC: Recentered the documented roadmap around holepunching, STUN-only transport, FIPS posture, and deployability.

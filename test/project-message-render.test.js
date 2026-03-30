@@ -40,7 +40,10 @@ function createNode(tagName) {
     attributes: {},
     parentNode: null,
     open: false,
-    style: {},
+    style: {
+      setProperty() {},
+      removeProperty() {},
+    },
     classList: {
       add(token) {
         if (!token) return;
@@ -128,15 +131,28 @@ function createNode(tagName) {
 
 function createHarness() {
   const body = createNode('body');
+  body.style = {
+    setProperty() {},
+    removeProperty() {},
+  };
   body.classList = {
     toggle() {},
     contains() { return false; },
   };
+  const listeners = {};
 
   const document = {
     body,
     createElement: createNode,
-    addEventListener() {},
+    addEventListener(type, handler) {
+      listeners[type] = listeners[type] || [];
+      listeners[type].push(handler);
+    },
+    dispatchEvent(event) {
+      const handlers = listeners[(event && event.type) || ''] || [];
+      handlers.forEach((handler) => handler.call(document, event));
+      return true;
+    },
     querySelector() { return null; },
     querySelectorAll() { return []; },
     getElementById() { return null; },
@@ -228,20 +244,23 @@ describe('project message render', function() {
 
     const bubble = findByClass(node, 'chat-bubble');
     const preview = findByClass(node, 'chat-bubble__body--preview');
-    const details = findByClass(node, 'chat-bubble__details--message');
+    const expander = findByClass(node, 'chat-bubble__message-expander');
     const full = findByClass(node, 'chat-bubble__body--full');
-    const summary = findByTag(details, 'summary');
+    const toggle = findByClass(node, 'chat-bubble__summary');
 
     assert.ok(bubble, 'expected a bubble');
     assert.ok(preview, 'expected a preview body');
     assert.equal(preview.textContent.endsWith('...'), true);
-    assert.ok(details, 'expected a collapsed details section');
-    assert.equal(summary.textContent, 'show more');
+    assert.ok(expander, 'expected a message expander');
+    assert.equal(toggle.textContent, 'show more');
+    assert.equal(preview.hidden, false);
+    assert.equal(full.hidden, true);
     assert.equal(full.textContent, longText);
-
-    details.open = true;
-    details.dispatchEvent({ type: 'toggle' });
-    assert.equal(summary.textContent, 'show less');
+    assert.equal(longText.startsWith(preview.textContent.slice(0, -3)), true);
+    toggle.dispatchEvent({ type: 'click', preventDefault() {} });
+    assert.equal(toggle.textContent, 'show less');
+    assert.equal(preview.hidden, true);
+    assert.equal(full.hidden, false);
   });
 
   it('keeps error text collapsed under the bubble', function() {
@@ -277,6 +296,51 @@ describe('project message render', function() {
     errorDetails.open = true;
     errorDetails.dispatchEvent({ type: 'toggle' });
     assert.equal(summary.textContent, 'hide error');
+  });
+
+  it('updates a pre-rendered message expander label on click', function() {
+    const harness = createHarness();
+    const expander = createNode('div');
+    expander.classList.add('chat-bubble__message-expander');
+    expander.setAttribute('data-message-expander', '');
+    expander.setAttribute('data-expanded', 'false');
+    const preview = createNode('pre');
+    preview.setAttribute('data-message-preview', '');
+    preview.hidden = false;
+    const full = createNode('pre');
+    full.setAttribute('data-message-full', '');
+    full.hidden = true;
+    const button = createNode('button');
+    button.classList.add('chat-bubble__summary');
+    button.setAttribute('data-message-toggle', '');
+    button.textContent = 'show more';
+    expander.appendChild(preview);
+    expander.appendChild(full);
+    expander.appendChild(button);
+    harness.document.body.appendChild(expander);
+    harness.document.querySelectorAll = function(selector) {
+      if (selector === '[data-message-expander]') return [expander];
+      if (selector === '.chat-bubble__details') return [];
+      return [];
+    };
+
+    const script = fs.readFileSync(path.join(__dirname, '..', 'src/public/project-page.js'), 'utf8');
+    const context = vm.createContext({
+      ...harness.window,
+    });
+    context.window = context;
+    context.document = harness.document;
+    context.history = harness.window.history;
+    context.location = harness.window.location;
+    context.addEventListener = harness.window.addEventListener;
+    context.removeEventListener = harness.window.removeEventListener;
+    vm.runInContext(script, context, { filename: 'project-page.js' });
+
+    assert.equal(button.textContent, 'show more');
+    button.dispatchEvent({ type: 'click', preventDefault() {} });
+    assert.equal(button.textContent, 'show less');
+    assert.equal(preview.hidden, true);
+    assert.equal(full.hidden, false);
   });
 
   it('scrolls the conversation thread to the bottom', function() {
