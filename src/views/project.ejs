@@ -27,6 +27,10 @@
   <% const projectSubtitle = project.description && !/^Imported from/i.test(project.description) ? project.description : ''; %>
   <% const projectGettingStarted = projectSettings.getting_started || projectSettings.instructions || ''; %>
   <% const projectBackend = typeof projectBackendSettings !== 'undefined' && projectBackendSettings ? projectBackendSettings : {}; %>
+  <% const projectWorkspaceAccess = typeof projectWorkspace !== 'undefined' && projectWorkspace ? projectWorkspace : (project.workspaceAccess || { hasWorkspace: false, canEmbed: false, openUrl: '', embedUrl: '', popoutUrl: '', provider: '', label: '', environment: '', statusLabel: '', hostLabel: '' }); %>
+  <% const workspaceLaunchRootValue = typeof workspaceLaunchRoot !== 'undefined' && workspaceLaunchRoot ? workspaceLaunchRoot : projectCodeFolder; %>
+  <% const workspaceErrorNotice = typeof workspaceErrorText !== 'undefined' ? String(workspaceErrorText || '') : ''; %>
+  <% const workspaceSuccessNotice = typeof workspaceNoticeText !== 'undefined' ? String(workspaceNoticeText || '') : ''; %>
   <% const projectUsageData = typeof projectUsage !== 'undefined' && projectUsage ? projectUsage : null; %>
   <% const latestCommitSnapshot = projectMemory && projectMemory.latestCommit ? projectMemory.latestCommit : null; %>
   <% const projectWorkspaceBranch = typeof workspaceBranch !== 'undefined' && workspaceBranch ? workspaceBranch : (projectMemory && projectMemory.workspaceBranch ? projectMemory.workspaceBranch : (latestCommitSnapshot && latestCommitSnapshot.branch ? latestCommitSnapshot.branch : '')); %>
@@ -325,6 +329,81 @@
       <div class="project-layout">
         <div class="project-layout__main">
       <% if (activeTab === 'overview') { %>
+        <section class="card card--workspace-portal">
+          <div class="card__header">
+            <div>
+              <div class="eyebrow">Browser Workspace</div>
+              <h2>Portal endpoint</h2>
+            </div>
+            <% if (projectWorkspaceAccess.provider) { %>
+              <span class="badge badge-accent"><%= projectWorkspaceAccess.provider %></span>
+            <% } %>
+          </div>
+
+          <% if (workspaceErrorNotice) { %>
+            <div class="openclaw-control__notice openclaw-control__notice--error" role="alert"><%= workspaceErrorNotice %></div>
+          <% } %>
+          <% if (workspaceSuccessNotice) { %>
+            <div class="openclaw-control__notice openclaw-control__notice--ok"><%= workspaceSuccessNotice %></div>
+          <% } %>
+
+          <div class="workspace-card__summary">
+            <div>
+              <strong><%= projectWorkspaceAccess.hasWorkspace ? (projectWorkspaceAccess.label || 'Workspace route ready') : 'No active browser workspace yet.' %></strong>
+              <p>
+                <% if (projectWorkspaceAccess.hasWorkspace) { %>
+                  <%= projectWorkspaceAccess.hostLabel || projectWorkspaceAccess.openUrl || 'Workspace endpoint available.' %>
+                <% } else if (workspaceLaunchRootValue) { %>
+                  Launch will configure a local code-server session for <%= workspaceLaunchRootValue %>.
+                <% } else { %>
+                  Launch will configure a local code-server session for this project.
+                <% } %>
+              </p>
+            </div>
+            <div class="workspace-card__meta">
+              <% if (projectWorkspaceAccess.environment) { %>
+                <span class="badge badge-neutral"><%= projectWorkspaceAccess.environment %></span>
+              <% } %>
+              <% if (projectWorkspaceAccess.statusLabel) { %>
+                <span class="badge badge-neutral"><%= projectWorkspaceAccess.statusLabel %></span>
+              <% } %>
+              <% if (projectWorkspaceAccess.hostLabel) { %>
+                <span class="badge badge-neutral"><%= projectWorkspaceAccess.hostLabel %></span>
+              <% } %>
+              <% if (!projectWorkspaceAccess.hasWorkspace) { %>
+                <span class="badge badge-neutral">auto launch</span>
+              <% } %>
+            </div>
+          </div>
+
+          <div class="actions">
+            <form method="post" action="/api/projects/<%= project.id %>/workspace/launch">
+              <input type="hidden" name="return_to" value="/project/<%= project.id %>?tab=overview" />
+              <button type="submit" class="btn btn-primary"><%= projectWorkspaceAccess.hasWorkspace ? 'Launch workspace' : 'Configure and launch workspace' %></button>
+            </form>
+            <% if (projectWorkspaceAccess.publicPopoutUrl || projectWorkspaceAccess.popoutUrl) { %>
+              <a class="btn" href="<%= projectWorkspaceAccess.publicPopoutUrl || projectWorkspaceAccess.popoutUrl %>" target="_blank" rel="noopener noreferrer">Pop out</a>
+            <% } %>
+            <a class="btn" href="/project/<%= project.id %>?tab=settings">Workspace settings</a>
+          </div>
+          <div class="field__hint">
+            <% if (projectWorkspaceAccess.hasWorkspace) { %>
+              Reconnects to the current full-page workspace, or starts a fresh local code-server session if the upstream is cold.
+            <% } else { %>
+              No manual endpoint is required. Vibez will infer the project folder, register a local session, and connect it through the portal route.
+            <% } %>
+          </div>
+          <% if (!projectWorkspaceAccess.hasWorkspace && workspaceLaunchRootValue) { %>
+            <div class="field__hint">Launch root: <code><%= workspaceLaunchRootValue %></code></div>
+          <% } %>
+          <% if (!projectWorkspaceAccess.hasWorkspace && !workspaceLaunchRootValue) { %>
+            <div class="empty-state empty-state--compact">
+              <strong>Project folder still needs configuration.</strong>
+              <p>Set the Code folder in Settings if this project should launch a repo outside its managed workspace directory.</p>
+            </div>
+          <% } %>
+        </section>
+
         <section class="card card--project-info">
           <div class="card__header">
             <div>
@@ -740,6 +819,54 @@
                 <div class="field__hint">This is the root folder the agent uses for workspace context and file change tracking.</div>
               </div>
 
+              <div class="grid grid--two">
+                <div class="field">
+                  <label for="workspace_url">Workspace URL</label>
+                  <input id="workspace_url" name="workspace_url" type="text" value="<%= projectSettings.workspace_url || projectSettings.workspaceUrl || '' %>" placeholder="https://repo-a.example.com" spellcheck="false" />
+                  <div class="field__hint">Canonical browser endpoint for this repo's code-server or IDE session.</div>
+                </div>
+                <div class="field">
+                  <label for="workspace_embed_url">Embed URL</label>
+                  <input id="workspace_embed_url" name="workspace_embed_url" type="text" value="<%= projectSettings.workspace_embed_url || projectSettings.workspaceEmbedUrl || '' %>" placeholder="https://repo-a.example.com/?folder=/workspace" spellcheck="false" />
+                  <div class="field__hint">Optional iframe URL if embedding needs a different route than the launch URL.</div>
+                </div>
+              </div>
+
+              <div class="grid grid--two">
+                <div class="field">
+                  <label for="workspace_popout_url">Pop-out URL</label>
+                  <input id="workspace_popout_url" name="workspace_popout_url" type="text" value="<%= projectSettings.workspace_popout_url || projectSettings.workspacePopoutUrl || '' %>" placeholder="https://repo-a.example.com" spellcheck="false" />
+                </div>
+                <div class="field">
+                  <label for="workspace_provider">Workspace provider</label>
+                  <input id="workspace_provider" name="workspace_provider" type="text" value="<%= projectSettings.workspace_provider || projectSettings.workspaceProvider || 'code-server' %>" placeholder="code-server" spellcheck="false" />
+                </div>
+              </div>
+
+              <div class="grid grid--three">
+                <div class="field">
+                  <label for="workspace_label">Workspace label</label>
+                  <input id="workspace_label" name="workspace_label" type="text" value="<%= projectSettings.workspace_label || projectSettings.workspaceLabel || '' %>" placeholder="Primary IDE" spellcheck="false" />
+                </div>
+                <div class="field">
+                  <label for="workspace_env_label">Environment</label>
+                  <input id="workspace_env_label" name="workspace_env_label" type="text" value="<%= projectSettings.workspace_env_label || projectSettings.workspaceEnvLabel || '' %>" placeholder="dev / staging" spellcheck="false" />
+                </div>
+                <div class="field">
+                  <label for="workspace_status_label">Status label</label>
+                  <input id="workspace_status_label" name="workspace_status_label" type="text" value="<%= projectSettings.workspace_status_label || projectSettings.workspaceStatusLabel || '' %>" placeholder="warm / active / paused" spellcheck="false" />
+                </div>
+              </div>
+
+              <div class="field">
+                <label for="workspace_embed_mode">Embed mode</label>
+                <select id="workspace_embed_mode" name="workspace_embed_mode">
+                  <option value="auto" <%= (projectSettings.workspace_embed_mode || projectSettings.workspaceEmbedMode || 'auto') === 'auto' ? 'selected' : '' %>>auto</option>
+                  <option value="off" <%= (projectSettings.workspace_embed_mode || projectSettings.workspaceEmbedMode) === 'off' ? 'selected' : '' %>>disable iframe embed</option>
+                </select>
+                <div class="field__hint">Keep this on `auto` for portal embedding, or disable if the workspace should only launch in its own tab.</div>
+              </div>
+
               <div class="field">
                 <label for="backend_override">Backend override</label>
                 <select id="backend_override" name="backend_override">
@@ -793,7 +920,15 @@
 
               <div class="settings-wizard__step">
                 <div class="settings-wizard__step-head">
-                  <strong>2. Backend override</strong>
+                  <strong>2. Browser workspace</strong>
+                  <button id="wizard_copy_workspace_url_btn" class="btn btn-tab btn-tab--compact" type="button">Mirror launch URL</button>
+                </div>
+                <p>Point this project at its code-server endpoint. If the iframe needs a different route, mirror or adjust the embed URL.</p>
+              </div>
+
+              <div class="settings-wizard__step">
+                <div class="settings-wizard__step-head">
+                  <strong>3. Backend override</strong>
                   <button id="wizard_fill_backend_btn" class="btn btn-tab btn-tab--compact" type="button">Use inherited backend</button>
                 </div>
                 <p>Keep this project on the global backend, or explicitly choose a backend just for this project.</p>
@@ -801,7 +936,7 @@
 
               <div class="settings-wizard__step">
                 <div class="settings-wizard__step-head">
-                  <strong>3. Getting started</strong>
+                  <strong>4. Getting started</strong>
                   <button id="wizard_fill_instructions_btn" class="btn btn-tab btn-tab--compact" type="button">Starter instructions</button>
                 </div>
                 <p>Write a short prompt for how the agent should begin work in this project.</p>

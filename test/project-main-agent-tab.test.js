@@ -672,6 +672,211 @@ describe('project main agent tab', function() {
     assert.match(html, /data-recent-files-sort-option="path"/);
   });
 
+  it('renders a browser workspace portal on the overview tab when configured', function() {
+    const html = renderProjectTemplate({
+      project: {
+        id: 'proj-workspace-portal',
+        name: 'Workspace Portal Project',
+        description: 'Browser workspace project',
+        status: 'active',
+        created_at: '2026-03-27T17:00:00.000Z',
+        last_activity: '2026-03-27T17:01:00.000Z',
+        memory_namespace: 'memory.proj-workspace-portal',
+        workspace_dir: '/tmp/proj-workspace-portal',
+        sessions: [],
+        workflows: [],
+        agents: [],
+        settings_json: {
+          workspace_url: 'https://repo-a.example.com',
+          workspace_embed_url: 'https://repo-a.example.com/?embed=1',
+          workspace_provider: 'code-server',
+          workspace_env_label: 'dev',
+          workspace_status_label: 'warm',
+        },
+      },
+      activeTab: 'overview',
+      activeSession: '',
+      currentSession: null,
+      messages: [],
+      logs: [],
+      artifacts: [],
+      agents: [],
+      planning: { currentState: [], now: [], health: [] },
+      sidebarProjects: [],
+      projectGroups: {
+        recent: [],
+        favourites: [],
+        favorites: [],
+        general: [],
+        pave: [],
+        sec06: [],
+        archived: [],
+      },
+      stats: {
+        sessionCount: 0,
+        workflowCount: 0,
+        agentCount: 0,
+        messageCount: 0,
+        logCount: 0,
+        artifactCount: 0,
+        activeSession: '',
+        activeWorkflowCount: 0,
+        idleWorkflowCount: 0,
+        latestWorkflow: null,
+        latestSession: null,
+        latestMessage: null,
+        latestLog: null,
+        workflowStates: {},
+        importedFrom: '',
+      },
+      conversationAgent: null,
+      codexModel: 'gpt-5.3-codex',
+      codexConfigured: false,
+      projectTabs: [
+        'overview',
+        'conversations',
+        'main-agent',
+        'workflows',
+        'memory',
+        'files',
+        'logs',
+        'settings',
+      ],
+      workflowIdFromQuery: '',
+      formatRelativeTime: (value) => value,
+      formatDateTime: (value) => value,
+      projectMemory: {
+        recentArtifacts: [],
+      },
+      projectBackendSettings: {
+        effectiveBackend: 'openclaw-proxy',
+        source: 'global',
+      },
+      projectWorkspace: {
+        hasWorkspace: true,
+        canEmbed: true,
+        openUrl: 'https://repo-a.example.com',
+        embedUrl: 'https://repo-a.example.com/?embed=1',
+        popoutUrl: 'https://repo-a.example.com',
+        provider: 'code-server',
+        label: 'Primary IDE',
+        environment: 'dev',
+        statusLabel: 'warm',
+        hostLabel: 'repo-a.example.com',
+      },
+      recentFileChanges: [],
+      workspaceBranch: '',
+      projectUsage: null,
+    });
+
+    assert.match(html, /Browser Workspace/);
+    assert.match(html, /Portal endpoint/);
+    assert.match(html, /Launch workspace/);
+    assert.match(html, /Pop out/);
+    assert.doesNotMatch(html, /<iframe/);
+    assert.match(html, /code-server/);
+    assert.match(html, /repo-a\.example\.com/);
+  });
+
+  it('renders a workspace launcher on the overview tab even when no endpoint is configured', function() {
+    const html = renderProjectTemplate({
+      project: {
+        id: 'proj-workspace-launch',
+        name: 'Workspace Launch Project',
+        description: 'Regression test project',
+        status: 'active',
+        created_at: '2026-03-27T17:00:00.000Z',
+        last_activity: '2026-03-27T17:01:00.000Z',
+        memory_namespace: 'memory.proj-workspace-launch',
+        workspace_dir: '/tmp/proj-workspace-launch',
+        sessions: [],
+        workflows: [],
+        agents: [],
+        settings_json: {},
+      },
+      activeTab: 'overview',
+      activeSession: '',
+      currentSession: null,
+      messages: [],
+      logs: [],
+      artifacts: [],
+      agents: [],
+      planning: { currentState: [], now: [], health: [] },
+      sidebarProjects: [],
+      projectGroups: {
+        recent: [],
+        favourites: [],
+        favorites: [],
+        general: [],
+        pave: [],
+        sec06: [],
+        archived: [],
+      },
+      stats: {
+        sessionCount: 0,
+        workflowCount: 0,
+        agentCount: 0,
+        messageCount: 0,
+        logCount: 0,
+        artifactCount: 0,
+        activeSession: null,
+        activeWorkflowCount: 0,
+        idleWorkflowCount: 0,
+        latestWorkflow: null,
+        latestSession: null,
+        latestMessage: null,
+        latestLog: null,
+        workflowStates: {},
+        importedFrom: '',
+      },
+      conversationAgent: null,
+      codexModel: 'gpt-5.3-codex',
+      codexConfigured: false,
+      projectTabs: [
+        'overview',
+        'conversations',
+        'main-agent',
+        'workflows',
+        'memory',
+        'files',
+        'logs',
+        'settings',
+      ],
+      workflowIdFromQuery: '',
+      formatRelativeTime: (value) => value,
+      formatDateTime: (value) => value,
+      projectMemory: {
+        recentArtifacts: [],
+      },
+      projectBackendSettings: {
+        effectiveBackend: 'openclaw-proxy',
+        source: 'global',
+      },
+      projectWorkspace: {
+        hasWorkspace: false,
+        canEmbed: false,
+        openUrl: '',
+        embedUrl: '',
+        popoutUrl: '',
+        provider: '',
+        label: '',
+        environment: '',
+        statusLabel: '',
+        hostLabel: '',
+      },
+      workspaceLaunchRoot: '/home/tom/code/workspace-launch',
+      recentFileChanges: [],
+      workspaceBranch: '',
+      projectUsage: null,
+    });
+
+    assert.match(html, /No active browser workspace yet\./);
+    assert.match(html, /Configure and launch workspace/);
+    assert.match(html, /\/api\/projects\/proj-workspace-launch\/workspace\/launch/);
+    assert.match(html, /auto launch/);
+    assert.match(html, /Launch root: <code>\/home\/tom\/code\/workspace-launch<\/code>/);
+  });
+
   it('renders workspace settings fields and setup wizard', function () {
     const html = renderProjectTemplate({
       project: {
@@ -768,9 +973,16 @@ describe('project main agent tab', function() {
       },
       projectSettingsWizard: {
         codeFolder: '/home/tom/code',
+        workspaceUrl: 'https://repo-a.example.com',
+        workspaceEmbedUrl: 'https://repo-a.example.com/?embed=1',
+        workspaceProvider: 'code-server',
         suggestedSubfolders: ['pave', 'sec'],
         commonIgnoreFolders: ['node_modules', 'dist', 'build'],
         starterInstructions: 'Read README.md first.',
+      },
+      projectBackendSettings: {
+        effectiveBackend: 'openclaw-proxy',
+        source: 'global',
       },
     });
 
@@ -780,6 +992,14 @@ describe('project main agent tab', function() {
       /<a class="tab [^"]*tab--utility[^"]*" href="\/project\/proj-settings\?tab=settings(?:&amp;session=ses-1)?">Settings<\/a>/,
     );
     assert.match(html, /name="code_folder"/);
+    assert.match(html, /name="workspace_url"/);
+    assert.match(html, /name="workspace_embed_url"/);
+    assert.match(html, /name="workspace_popout_url"/);
+    assert.match(html, /name="workspace_provider"/);
+    assert.match(html, /name="workspace_label"/);
+    assert.match(html, /name="workspace_env_label"/);
+    assert.match(html, /name="workspace_status_label"/);
+    assert.match(html, /name="workspace_embed_mode"/);
     assert.match(html, /name="getting_started"/);
     assert.match(html, /Setup guide/);
     assert.match(html, /Chat management/);
@@ -789,6 +1009,7 @@ describe('project main agent tab', function() {
     assert.match(html, /action="\/api\/projects\/proj-settings\/chats\/new"/);
     assert.match(html, />Start new chat</);
     assert.match(html, /wizard_use_code_folder_btn/);
+    assert.match(html, /wizard_copy_workspace_url_btn/);
     assert.match(html, /wizard_fill_instructions_btn/);
     assert.doesNotMatch(html, /name="subfolders"/);
     assert.doesNotMatch(html, /name="ignore_folders"/);

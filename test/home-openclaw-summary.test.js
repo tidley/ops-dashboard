@@ -110,4 +110,89 @@ describe('home openclaw summary', function() {
     assert.match(html, /data-sidebar-scroll/);
     assert.match(html, /home-sidebar\.js/);
   });
+
+  it('renders the browser workspace portal when project endpoints are configured', function() {
+    const html = renderTemplate({
+      projectGroups: {
+        recent: [],
+        favourites: [],
+        favorites: [],
+        general: [],
+        pave: [],
+        sec06: [],
+        archived: [],
+      },
+      projects: [],
+      workspaceProjects: [
+        {
+          id: 'proj-portal',
+          name: 'Portal Project',
+          workspaceAccess: {
+            hasWorkspace: true,
+            canEmbed: true,
+            openUrl: 'https://repo-a.example.com',
+            embedUrl: 'https://repo-a.example.com/?embed=1',
+            popoutUrl: 'https://repo-a.example.com',
+            provider: 'code-server',
+            label: 'Primary IDE',
+            environment: 'dev',
+            statusLabel: 'warm',
+            hostLabel: 'repo-a.example.com',
+          },
+        },
+      ],
+      featuredWorkspaceProject: {
+        id: 'proj-portal',
+        name: 'Portal Project',
+        workspaceAccess: {
+          hasWorkspace: true,
+          canEmbed: true,
+          openUrl: 'https://repo-a.example.com',
+          embedUrl: 'https://repo-a.example.com/?embed=1',
+          popoutUrl: 'https://repo-a.example.com',
+          provider: 'code-server',
+          label: 'Primary IDE',
+          environment: 'dev',
+          statusLabel: 'warm',
+          hostLabel: 'repo-a.example.com',
+        },
+      },
+      agents: [],
+      dashboard: {
+        projectCount: 1,
+        activeProjectCount: 1,
+        workflowCount: 0,
+        sessionCount: 0,
+        agentCount: 0,
+      },
+      usage: {
+        aggregateTodayTotal: 0,
+        aggregateWeeklyTotal: 0,
+        aggregate30dTotal: 0,
+        aggregate24hSeries: [],
+        hourLabels: [],
+        aggregate7dSeries: [],
+        dayLabels: [],
+        aggregate30dSeries: [],
+        monthLabels: [],
+        projectSummaries: [],
+      },
+      planning: { currentState: [], health: [], next: [] },
+      featuredProject: null,
+      openclawControl: {
+        ok: true,
+        summary: {},
+      },
+      openclawNotice: '',
+      openclawError: '',
+      formatRelativeTime: (value) => value,
+    });
+
+    assert.match(html, /Workspace Portal/);
+    assert.match(html, /Embedded workspace/);
+    assert.match(html, /Workspace endpoints/);
+    assert.match(html, /Open workspace/);
+    assert.match(html, /src="https:\/\/repo-a\.example\.com\/\?embed=1"/);
+    assert.match(html, /Portal Project/);
+  });
 });

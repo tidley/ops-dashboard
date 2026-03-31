@@ -45,8 +45,94 @@ function normalizeFolderListField(value) {
   return items;
 }
 
+function normalizeWorkspaceUrl(value) {
+  const text = toText(value);
+  if (!text) return '';
+  if (/^(javascript|data|file):/i.test(text)) return '';
+  if (text.startsWith('/')) return text;
+
+  try {
+    const parsed = new URL(text);
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+      return parsed.toString();
+    }
+    return '';
+  } catch {
+    if (/^[a-z0-9.-]+(?::\d+)?(?:\/.*)?$/i.test(text)) {
+      return `https://${text}`;
+    }
+    return '';
+  }
+}
+
+function extractWorkspaceHostLabel(url) {
+  const text = toText(url);
+  if (!text) return '';
+  if (text.startsWith('/')) return 'portal route';
+  try {
+    return new URL(text).host;
+  } catch {
+    return '';
+  }
+}
+
+function normalizeWorkspaceEmbedMode(value) {
+  const text = toText(value).toLowerCase();
+  return text === 'off' ? 'off' : 'auto';
+}
+
+function normalizeWorkspaceAccessSettings(settings = {}) {
+  const raw = settings && typeof settings === 'object' ? settings : {};
+  const openUrl = normalizeWorkspaceUrl(
+    raw.workspace_url
+    || raw.workspaceUrl
+    || raw.ide_url
+    || raw.ideUrl
+    || raw.code_server_url
+    || raw.codeServerUrl
+    || '',
+  );
+  const embedMode = normalizeWorkspaceEmbedMode(raw.workspace_embed_mode || raw.workspaceEmbedMode || '');
+  const embedUrl = embedMode === 'off'
+    ? ''
+    : normalizeWorkspaceUrl(
+      raw.workspace_embed_url
+      || raw.workspaceEmbedUrl
+      || raw.embed_url
+      || raw.embedUrl
+      || raw.workspace_iframe_url
+      || raw.workspaceIframeUrl
+      || openUrl,
+    );
+  const popoutUrl = normalizeWorkspaceUrl(raw.workspace_popout_url || raw.workspacePopoutUrl || '') || openUrl;
+  const controlUrl = normalizeWorkspaceUrl(raw.workspace_control_url || raw.workspaceControlUrl || '');
+  const healthUrl = normalizeWorkspaceUrl(raw.workspace_health_url || raw.workspaceHealthUrl || '');
+  const provider = toText(raw.workspace_provider || raw.workspaceProvider || (openUrl || embedUrl ? 'code-server' : ''));
+  const label = toText(raw.workspace_label || raw.workspaceLabel || '');
+  const environment = toText(raw.workspace_env_label || raw.workspaceEnvLabel || raw.environment || raw.env || '');
+  const statusLabel = toText(raw.workspace_status_label || raw.workspaceStatusLabel || (openUrl || embedUrl ? 'Configured' : ''));
+  const hasWorkspace = Boolean(openUrl || embedUrl || popoutUrl);
+
+  return {
+    hasWorkspace,
+    provider,
+    label,
+    environment,
+    statusLabel,
+    embedMode,
+    openUrl: openUrl || embedUrl || popoutUrl,
+    embedUrl,
+    popoutUrl,
+    controlUrl,
+    healthUrl,
+    hostLabel: extractWorkspaceHostLabel(openUrl || embedUrl || popoutUrl),
+    canEmbed: Boolean(embedUrl),
+  };
+}
+
 function normalizeWorkspaceSettings(settings = {}) {
   const raw = settings && typeof settings === 'object' ? settings : {};
+  const workspaceAccess = normalizeWorkspaceAccessSettings(raw);
   return {
     codeFolder: toText(raw.code_folder || raw.imported_from || raw.workspace_dir || ''),
     subfolders: normalizeFolderListField(raw.subfolders || raw.code_subfolders || []),
@@ -55,6 +141,14 @@ function normalizeWorkspaceSettings(settings = {}) {
     agentBackend: normalizeAgentBackendChoice(raw.agent_backend || raw.agentBackend || '', ''),
     routstrProvider: toText(raw.routstr_provider || raw.routstrProvider || ''),
     routstrModel: toText(raw.routstr_model || raw.routstrModel || ''),
+    workspaceUrl: workspaceAccess.openUrl,
+    workspaceEmbedUrl: workspaceAccess.embedUrl,
+    workspacePopoutUrl: workspaceAccess.popoutUrl,
+    workspaceProvider: workspaceAccess.provider,
+    workspaceLabel: workspaceAccess.label,
+    workspaceEnvironment: workspaceAccess.environment,
+    workspaceStatusLabel: workspaceAccess.statusLabel,
+    workspaceEmbedMode: workspaceAccess.embedMode,
   };
 }
 
@@ -165,12 +259,16 @@ function buildGlobalSettingsWizard(settings = {}) {
 function buildProjectSettingsWizard(project, globalSettings = {}) {
   const settings = getProjectFolderSettings(project, globalSettings);
   const backendSettings = resolveAgentBackendSettings(project, globalSettings);
+  const workspaceAccess = normalizeWorkspaceAccessSettings(project?.settings_json || {});
   return {
     codeFolder: settings.codeFolder,
     backendOverride: backendSettings.projectOverride,
     agentBackend: backendSettings.effectiveBackend,
     routstrProvider: backendSettings.routstrProvider,
     routstrModel: backendSettings.routstrModel,
+    workspaceUrl: workspaceAccess.openUrl,
+    workspaceEmbedUrl: workspaceAccess.embedUrl,
+    workspaceProvider: workspaceAccess.provider || 'code-server',
     starterInstructions: [
       'Start by reading the repository README and the project settings.',
       'Focus on the configured code folder first.',
@@ -198,6 +296,7 @@ module.exports = {
   normalizeFolderListField,
   normalizeAgentBackendChoice,
   normalizeProjectBackendSettings,
+  normalizeWorkspaceAccessSettings,
   normalizeWorkspaceSettings,
   resolveAgentBackendSettings,
   shouldIncludeRecentFile,

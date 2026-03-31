@@ -1,3 +1,5 @@
+const http = require('http');
+const httpProxy = require('http-proxy');
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
@@ -28,6 +30,7 @@ const {
   buildGlobalSettingsWizard,
   buildProjectSettingsWizard,
   getProjectFolderSettings,
+  normalizeWorkspaceAccessSettings,
   resolveAgentBackendSettings,
   normalizeFolderListField,
   shouldIncludeRecentFile,
@@ -37,6 +40,13 @@ const {
   resolveListenHost,
   resolveListenPort,
 } = require('./deployment');
+const {
+  findAvailablePort,
+  launchCodeServer,
+  preferredPortForProject,
+  probePort,
+  waitForPort,
+} = require('./workspace-runtime');
 const {
   ACCESS_APP,
   handleBootstrapEvent,
@@ -49,6 +59,8 @@ const {
   accessCookieOptions,
   buildAccessCookieValue,
   createRequireAccess,
+  isAccessSessionActive,
+  parseCookiesHeader,
 } = require('./http-auth');
 
 initDb();
@@ -69,6 +81,14 @@ const relayAccessController = new NostrRelayAccessController({
   webRtcGateway,
   gatewayIdentity,
   relays: defaultRelayUrls(),
+});
+const jsonParser = express.json({ limit: '1mb' });
+const urlencodedParser = express.urlencoded({ extended: true });
+const workspaceProxy = httpProxy.createProxyServer({
+  changeOrigin: true,
+  ws: true,
+  xfwd: true,
+  secure: false,
 });
 
 function safeParseJson(raw, fallback) {
@@ -146,13 +166,216 @@ function escapeHtml(value) {
 }
 
 function decorateProject(project) {
+  const workspaceAccess = buildProjectWorkspaceAccess(project);
   return {
     ...project,
     sectionLabel: project.section === 'pave' ? 'Pave' : project.section === 'sec06' ? 'sec06' : 'General',
     activityLabel: formatRelativeTime(project.last_activity || project.created_at),
     hasActivity: Boolean(project.last_activity),
+    workspaceAccess,
   };
 }
+
+function buildWorkspaceProxyBase(projectId) {
+  return `/workspace/${encodeURIComponent(projectId || '')}`;
+}
+
+function buildProjectWorkspaceAccess(project) {
+  const workspaceAccess = normalizeWorkspaceAccessSettings(project?.settings_json || {});
+  if (!workspaceAccess.hasWorkspace || !project?.id) return workspaceAccess;
+  const proxyBase = buildWorkspaceProxyBase(project.id);
+  return {
+    ...workspaceAccess,
+    upstreamUrl: workspaceAccess.openUrl,
+    publicOpenUrl: `${proxyBase}/`,
+    publicEmbedUrl: workspaceAccess.canEmbed ? `${proxyBase}/` : '',
+    publicPopoutUrl: `${proxyBase}/`,
+    proxyBase,
+  };
+}
+
+function getWorkspaceProxyTarget(projectId) {
+  const project = store.getProject(projectId);
+  if (!project) return null;
+  const workspaceAccess = normalizeWorkspaceAccessSettings(project.settings_json || {});
+  if (!workspaceAccess.hasWorkspace || !workspaceAccess.openUrl || workspaceAccess.openUrl.startsWith('/')) return null;
+  return {
+    project,
+    target: workspaceAccess.openUrl,
+  };
+}
+
+function rewriteWorkspaceLocationHeader(location, prefix, target) {
+  const value = `${location || ''}`.trim();
+  if (!value || !prefix || !target) return value;
+  if (value.startsWith(prefix)) return value;
+
+  try {
+    const targetUrl = new URL(target);
+    const resolved = new URL(value, targetUrl);
+    if (resolved.origin !== targetUrl.origin) return value;
+    return `${prefix}${resolved.pathname}${resolved.search}${resolved.hash}`;
+  } catch {
+    if (value.startsWith('/')) return `${prefix}${value}`;
+    return value;
+  }
+}
+
+function rewriteWorkspaceSetCookie(cookieValue, prefix) {
+  const value = `${cookieValue || ''}`.trim();
+  if (!value || !prefix) return value;
+  if (/;\s*path=/i.test(value)) {
+    return value.replace(/;\s*path=([^;]*)/i, `; Path=${prefix}/`);
+  }
+  return `${value}; Path=${prefix}/`;
+}
+
+function hasActiveAccessSession(req) {
+  const cookies = parseCookiesHeader(req.headers?.cookie || '');
+  const sessionId = `${cookies[AUTH_COOKIE_NAME] || ''}`.trim();
+  if (!sessionId) return false;
+  const session = store.getAccessSession(sessionId);
+  if (!isAccessSessionActive(session)) return false;
+  store.touchAccessSession(session.id, {
+    last_seen_at: new Date().toISOString(),
+  });
+  return true;
+}
+
+function resolveWorkspaceUpstreamPort(project) {
+  const current = normalizeWorkspaceAccessSettings(project?.settings_json || {});
+  const source = current.openUrl || '';
+  if (!source) return 0;
+  try {
+    const parsed = new URL(source);
+    if (!['127.0.0.1', 'localhost'].includes(parsed.hostname)) return 0;
+    return Number(parsed.port) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+function isLoopbackWorkspaceUrl(value) {
+  const source = `${value || ''}`.trim();
+  if (!source) return false;
+  try {
+    const parsed = new URL(source);
+    return ['127.0.0.1', 'localhost'].includes(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
+
+function appendQueryValue(location, key, value) {
+  const base = `${location || ''}`.trim() || '/';
+  const separator = base.includes('?') ? '&' : '?';
+  return `${base}${separator}${encodeURIComponent(key)}=${encodeURIComponent(value)}`;
+}
+
+async function ensureProjectWorkspaceSession(project, globalSettings = null) {
+  if (!project?.id) throw new Error('Project not found');
+
+  const currentWorkspace = normalizeWorkspaceAccessSettings(project.settings_json || {});
+  if (currentWorkspace.hasWorkspace && currentWorkspace.openUrl && !currentWorkspace.openUrl.startsWith('/') && !isLoopbackWorkspaceUrl(currentWorkspace.openUrl)) {
+    return {
+      location: buildWorkspaceProxyBase(project.id) + '/',
+      launched: false,
+      port: 0,
+      workspacePath: '',
+    };
+  }
+
+  const folderSettings = getProjectFolderSettings(project, globalSettings || getGlobalWorkspaceSettings());
+  const workspacePath = resolveProjectRoot(project, folderSettings);
+  if (!workspacePath) {
+    throw new Error('Project folder is not configured yet. Set the Code folder in Settings first.');
+  }
+
+  let workspaceStat = null;
+  try {
+    workspaceStat = fs.statSync(workspacePath);
+  } catch {
+    workspaceStat = null;
+  }
+  if (!workspaceStat || !workspaceStat.isDirectory()) {
+    throw new Error(`Workspace folder not found: ${workspacePath}`);
+  }
+
+  const host = '127.0.0.1';
+  let port = resolveWorkspaceUpstreamPort(project);
+  let listening = false;
+
+  if (port) {
+    listening = await probePort(host, port);
+  } else {
+    const preferredPort = preferredPortForProject(project.id);
+    port = await findAvailablePort(host, preferredPort);
+  }
+
+  let logPath = '';
+  if (!listening) {
+    const launched = launchCodeServer({
+      projectId: project.id,
+      projectName: project.name,
+      workspacePath,
+      port,
+      host,
+      proxyBase: buildWorkspaceProxyBase(project.id),
+    });
+    logPath = launched.logPath || '';
+    listening = await waitForPort(host, port, 15000);
+    if (!listening) {
+      throw new Error(`Workspace failed to start on ${host}:${port}${logPath ? `. Check ${logPath}` : ''}`);
+    }
+  }
+
+  const upstreamUrl = `http://${host}:${port}`;
+  const nextSettings = {
+    workspace_url: upstreamUrl,
+    workspace_embed_url: upstreamUrl,
+    workspace_popout_url: upstreamUrl,
+    workspace_provider: currentWorkspace.provider || 'code-server',
+    workspace_label: currentWorkspace.label || `${project.name} Workspace`,
+    workspace_env_label: currentWorkspace.environment || process.env.HOSTNAME || '',
+    workspace_status_label: 'warm',
+    workspace_embed_mode: currentWorkspace.embedMode || 'auto',
+  };
+
+  store.updateProjectSettings(project.id, nextSettings);
+
+  return {
+    location: buildWorkspaceProxyBase(project.id) + '/',
+    launched: Boolean(logPath),
+    port,
+    workspacePath,
+  };
+}
+
+workspaceProxy.on('proxyRes', (proxyRes, req) => {
+  const prefix = req._workspaceProxyPrefix || '';
+  const target = req._workspaceProxyTarget || '';
+  if (!prefix) return;
+
+  if (proxyRes.headers.location) {
+    proxyRes.headers.location = rewriteWorkspaceLocationHeader(proxyRes.headers.location, prefix, target);
+  }
+
+  if (Array.isArray(proxyRes.headers['set-cookie'])) {
+    proxyRes.headers['set-cookie'] = proxyRes.headers['set-cookie'].map((cookieValue) => rewriteWorkspaceSetCookie(cookieValue, prefix));
+  }
+});
+
+workspaceProxy.on('error', (error, req, res) => {
+  if (res && !res.headersSent) {
+    res.statusCode = 502;
+    res.setHeader('content-type', 'text/plain; charset=utf-8');
+    res.end(`Workspace proxy error: ${error?.message || 'unavailable'}`);
+    return;
+  }
+  if (res && typeof res.end === 'function') {
+    res.end();
+  }
+});
 
 function serializeSidebarProject(project) {
   return {
@@ -1565,8 +1788,12 @@ app.set('views', path.join(__dirname, 'views'));
 app.set('trust proxy', 1);
 
 app.use(cookieParser());
-app.use(express.json({ limit: '1mb' }));
-app.use(express.urlencoded({ extended: true }));
+app.use((req, res, next) => (req.path || '').startsWith('/workspace/')
+  ? next()
+  : jsonParser(req, res, next));
+app.use((req, res, next) => (req.path || '').startsWith('/workspace/')
+  ? next()
+  : urlencodedParser(req, res, next));
 app.use('/public', express.static(path.join(__dirname, 'public')));
 app.use('/public/vendor', express.static(path.join(__dirname, '..', 'node_modules', 'nostr-tools', 'lib')));
 
@@ -1580,6 +1807,21 @@ app.get('/access', (req, res) => {
 });
 
 app.use(createRequireAccess({ store }));
+
+app.use('/workspace/:projectId', (req, res) => {
+  const upstream = getWorkspaceProxyTarget(req.params.projectId);
+  if (!upstream) {
+    return res.status(404).send('Workspace not configured');
+  }
+
+  req._workspaceProxyPrefix = buildWorkspaceProxyBase(req.params.projectId);
+  req._workspaceProxyTarget = upstream.target;
+  req.url = req.url && req.url.trim() ? req.url : '/';
+
+  return workspaceProxy.web(req, res, {
+    target: upstream.target,
+  });
+});
 
 app.post('/logout', (req, res) => {
   const sessionId = req.accessSession?.id || '';
@@ -1601,6 +1843,10 @@ app.get('/', (req, res) => {
   const openclawControl = collectOpenClawControlPanel();
 
   const featuredProject = projects.find(p => p.hasActivity) || projects[0] || null;
+  const workspaceProjects = projects.filter(project => project.workspaceAccess && project.workspaceAccess.hasWorkspace && !project.archived);
+  const featuredWorkspaceProject = (featuredProject && featuredProject.workspaceAccess && featuredProject.workspaceAccess.hasWorkspace)
+    ? featuredProject
+    : (workspaceProjects[0] || null);
 
   res.render('index', {
     projects,
@@ -1610,6 +1856,8 @@ app.get('/', (req, res) => {
     usage,
     planning,
     featuredProject,
+    workspaceProjects,
+    featuredWorkspaceProject,
     openclawControl,
     openclawNotice: lastStringField(req.query.openclaw_notice, ''),
     openclawError: lastStringField(req.query.openclaw_error, ''),
@@ -1724,8 +1972,9 @@ app.post('/api/access/sessions/:sessionId/revoke', (req, res) => {
 });
 
 app.get('/project/:projectId', (req, res) => {
-  const project = store.getProject(req.params.projectId);
-  if (!project) return res.status(404).send('Project not found');
+  const projectRecord = store.getProject(req.params.projectId);
+  if (!projectRecord) return res.status(404).send('Project not found');
+  const project = decorateProject(projectRecord);
   const activeTab = normalizeProjectTab(req.query.tab || project.ui_state?.last_tab || 'overview');
   const conversationProject = resolveConversationProject(project, activeTab === 'main-agent' ? 'main' : 'project');
   const globalWorkspaceSettings = getGlobalWorkspaceSettings();
@@ -1767,6 +2016,10 @@ app.get('/project/:projectId', (req, res) => {
   const stats = computeProjectStats(project, messages, logs, artifacts, activeSession);
   const currentSession = conversationProject.sessions.find(s => s.id === activeSession) || conversationProject.sessions[0] || null;
   const projectBackendSettings = getResolvedAgentBackend(project, globalWorkspaceSettings);
+  const projectWorkspace = project.workspaceAccess || normalizeWorkspaceAccessSettings(project.settings_json || {});
+  const workspaceLaunchRoot = resolveProjectRoot(project, projectFolderSettings);
+  const workspaceErrorText = lastStringField(req.query.workspace_error, '');
+  const workspaceNoticeText = lastStringField(req.query.workspace_notice, '');
   const conversationAgent = activeTab === 'main-agent'
     ? resolveConversationAgent(conversationProject, 'main')
     : resolveConversationAgent(project, 'project', activeSession || '');
@@ -1834,6 +2087,10 @@ app.get('/project/:projectId', (req, res) => {
     projectSettingsWizard,
     globalWorkspaceSettings,
     projectBackendSettings,
+    projectWorkspace,
+    workspaceLaunchRoot,
+    workspaceErrorText,
+    workspaceNoticeText,
     workspaceBranch,
     mainAgent,
     mainProject: mainProject || null,
@@ -1936,6 +2193,21 @@ app.post('/api/projects/:projectId/archive', (req, res) => {
   res.redirect(returnTo);
 });
 
+app.post('/api/projects/:projectId/workspace/launch', async (req, res) => {
+  const project = store.getProject(req.params.projectId);
+  if (!project) return res.status(404).send('Project not found');
+
+  const returnTo = `${req.body.return_to || ''}`.trim() || `/project/${project.id}`;
+
+  try {
+    const launched = await ensureProjectWorkspaceSession(project, getGlobalWorkspaceSettings());
+    return res.redirect(302, launched.location);
+  } catch (err) {
+    const message = `${err?.message || err || 'Workspace launch failed'}`.trim() || 'Workspace launch failed';
+    return res.redirect(302, appendQueryValue(returnTo, 'workspace_error', message));
+  }
+});
+
 app.post('/api/projects/:projectId/settings', (req, res) => {
   const project = store.getProject(req.params.projectId);
   if (!project) return res.status(404).send('Project not found');
@@ -1945,6 +2217,14 @@ app.post('/api/projects/:projectId/settings', (req, res) => {
   const backendOverride = `${req.body.backend_override || req.body.backendOverride || ''}`.trim() || 'inherit';
   const routstrProvider = `${req.body.routstr_provider || req.body.routstrProvider || ''}`.trim();
   const routstrModel = `${req.body.routstr_model || req.body.routstrModel || ''}`.trim();
+  const workspaceUrl = `${req.body.workspace_url || req.body.workspaceUrl || ''}`.trim();
+  const workspaceEmbedUrl = `${req.body.workspace_embed_url || req.body.workspaceEmbedUrl || ''}`.trim();
+  const workspacePopoutUrl = `${req.body.workspace_popout_url || req.body.workspacePopoutUrl || ''}`.trim();
+  const workspaceProvider = `${req.body.workspace_provider || req.body.workspaceProvider || ''}`.trim();
+  const workspaceLabel = `${req.body.workspace_label || req.body.workspaceLabel || ''}`.trim();
+  const workspaceEnvironment = `${req.body.workspace_env_label || req.body.workspaceEnvLabel || ''}`.trim();
+  const workspaceStatusLabel = `${req.body.workspace_status_label || req.body.workspaceStatusLabel || ''}`.trim();
+  const workspaceEmbedMode = `${req.body.workspace_embed_mode || req.body.workspaceEmbedMode || ''}`.trim() || 'auto';
 
   const patch = {
     code_folder: codeFolder,
@@ -1955,6 +2235,14 @@ app.post('/api/projects/:projectId/settings', (req, res) => {
     backend_override: backendOverride,
     routstr_provider: routstrProvider,
     routstr_model: routstrModel,
+    workspace_url: workspaceUrl,
+    workspace_embed_url: workspaceEmbedUrl,
+    workspace_popout_url: workspacePopoutUrl,
+    workspace_provider: workspaceProvider,
+    workspace_label: workspaceLabel,
+    workspace_env_label: workspaceEnvironment,
+    workspace_status_label: workspaceStatusLabel,
+    workspace_embed_mode: workspaceEmbedMode,
   };
 
   if (codeFolder) {
@@ -2286,10 +2574,42 @@ app.use((err, req, res, next) => {
   return res.status(500).send('Internal server error');
 });
 
+function handleWorkspaceUpgrade(req, socket, head) {
+  const parsed = new URL(req.url || '/', 'http://localhost');
+  const match = parsed.pathname.match(/^\/workspace\/([^/]+)(\/.*)?$/);
+  if (!match) return false;
+  if (!hasActiveAccessSession(req)) {
+    socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+    socket.destroy();
+    return true;
+  }
+
+  const projectId = decodeURIComponent(match[1] || '');
+  const upstream = getWorkspaceProxyTarget(projectId);
+  if (!upstream) {
+    socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
+    socket.destroy();
+    return true;
+  }
+
+  req._workspaceProxyPrefix = buildWorkspaceProxyBase(projectId);
+  req._workspaceProxyTarget = upstream.target;
+  req.url = `${match[2] || '/'}${parsed.search || ''}`;
+  workspaceProxy.ws(req, socket, head, {
+    target: upstream.target,
+  });
+  return true;
+}
+
 if (require.main === module) {
   relayAccessController.start();
   void refreshOpenClawControlPanel().catch(() => {});
-  app.listen(PORT, LISTEN_HOST, () => {
+  const server = http.createServer(app);
+  server.on('upgrade', (req, socket, head) => {
+    if (handleWorkspaceUpgrade(req, socket, head)) return;
+    socket.destroy();
+  });
+  server.listen(PORT, LISTEN_HOST, () => {
     console.log(`Ops dashboard running on http://${LISTEN_HOST}:${PORT}`);
   });
 }

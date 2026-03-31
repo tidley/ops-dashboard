@@ -1147,6 +1147,10 @@ body[data-page='project'] .sidebar .brand h1 a[href='/']:hover {
   margin-bottom: 16px;
 }
 
+.grid--three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .openclaw-grid {
   margin-bottom: 16px;
 }
@@ -2203,6 +2207,89 @@ body[data-active-tab='main-agent'] .project-layout {
   font-size: 0.84rem;
 }
 
+.card--workspace-portal,
+.workspace-card {
+  display: grid;
+  gap: 14px;
+}
+
+.workspace-portal-grid {
+  margin-bottom: 16px;
+}
+
+.workspace-card--featured {
+  align-content: start;
+}
+
+.workspace-card__summary {
+  display: grid;
+  gap: 12px;
+}
+
+.workspace-card__summary p {
+  margin: 6px 0 0;
+  color: var(--muted);
+}
+
+.workspace-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.workspace-launcher-list {
+  display: grid;
+  gap: 12px;
+}
+
+.workspace-launcher {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(124, 184, 255, 0.06), rgba(23, 27, 34, 0.94));
+}
+
+.workspace-launcher__copy {
+  display: grid;
+  gap: 4px;
+}
+
+.workspace-launcher__copy span {
+  color: var(--muted);
+  word-break: break-word;
+}
+
+.workspace-launcher__meta,
+.workspace-launcher__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.workspace-frame-shell {
+  position: relative;
+  overflow: hidden;
+  min-height: 520px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(12, 15, 20, 0.96), rgba(8, 10, 14, 0.98));
+}
+
+.workspace-frame-shell--home {
+  min-height: 460px;
+}
+
+.workspace-frame {
+  display: block;
+  width: 100%;
+  min-height: inherit;
+  height: 100%;
+  border: 0;
+  background: #0b0d12;
+}
+
 .card--usage {
   display: grid;
   gap: 14px;
@@ -2559,6 +2646,10 @@ select:focus {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+.actions form {
+  margin: 0;
 }
 
 .actions--chat {
@@ -3329,6 +3420,10 @@ button.is-busy:hover {
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .grid--three {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .openclaw-control__layout {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -3339,6 +3434,11 @@ button.is-busy:hover {
 
   .access-actions {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .workspace-frame-shell,
+  .workspace-frame-shell--home {
+    min-height: 360px;
   }
 }
 

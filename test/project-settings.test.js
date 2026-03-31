@@ -3,6 +3,7 @@ const {
   getProjectFolderSettings,
   normalizeFolderListField,
   resolveAgentBackendSettings,
+  normalizeWorkspaceAccessSettings,
   shouldIncludeRecentFile,
   summarizeProjectFolderSettings,
   buildProjectSettingsWizard,
@@ -119,5 +120,27 @@ describe('project settings helpers', function() {
     }, {});
     assert.equal(fallback.effectiveBackend, 'openclaw-proxy');
     assert.equal(fallback.source, 'fallback');
+  });
+
+  it('normalizes browser workspace access settings for portal launch and embed', function() {
+    const workspace = normalizeWorkspaceAccessSettings({
+      workspace_url: 'repo-a.example.com',
+      workspace_embed_url: 'https://repo-a.example.com/?embed=1',
+      workspace_provider: 'code-server',
+      workspace_label: 'Primary IDE',
+      workspace_env_label: 'staging',
+      workspace_status_label: 'warm',
+      workspace_embed_mode: 'auto',
+    });
+
+    assert.equal(workspace.hasWorkspace, true);
+    assert.equal(workspace.openUrl, 'https://repo-a.example.com');
+    assert.equal(workspace.embedUrl, 'https://repo-a.example.com/?embed=1');
+    assert.equal(workspace.provider, 'code-server');
+    assert.equal(workspace.label, 'Primary IDE');
+    assert.equal(workspace.environment, 'staging');
+    assert.equal(workspace.statusLabel, 'warm');
+    assert.equal(workspace.hostLabel, 'repo-a.example.com');
+    assert.equal(workspace.canEmbed, true);
   });
 });

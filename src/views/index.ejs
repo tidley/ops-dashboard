@@ -20,6 +20,8 @@
   <% const openclawSummary = openclawControl && openclawControl.summary ? openclawControl.summary : {}; %>
   <% const openclawNoticeText = typeof openclawNotice !== 'undefined' ? openclawNotice : ''; %>
   <% const openclawErrorText = typeof openclawError !== 'undefined' ? openclawError : ''; %>
+  <% const workspaceProjectsList = Array.isArray(typeof workspaceProjects !== 'undefined' ? workspaceProjects : null) ? workspaceProjects : []; %>
+  <% const featuredWorkspace = (typeof featuredWorkspaceProject !== 'undefined' && featuredWorkspaceProject) ? featuredWorkspaceProject : (workspaceProjectsList[0] || null); %>
   <div class="shell">
     <aside class="sidebar" id="home_sidebar" data-project-filter-root data-active-project-id="<%= activeProjectId %>">
       <div class="brand">
@@ -361,6 +363,112 @@
               <span>Tokens 7d</span>
             </div>
           </div>
+        </article>
+      </section>
+
+      <section class="grid grid--two workspace-portal-grid">
+        <article class="card workspace-card workspace-card--featured">
+          <div class="card__header">
+            <div>
+              <div class="eyebrow">Workspace Portal</div>
+              <h2>Embedded workspace</h2>
+            </div>
+            <% if (featuredWorkspace && featuredWorkspace.workspaceAccess && featuredWorkspace.workspaceAccess.provider) { %>
+              <span class="badge badge-accent"><%= featuredWorkspace.workspaceAccess.provider %></span>
+            <% } %>
+          </div>
+
+          <% if (featuredWorkspace && featuredWorkspace.workspaceAccess && featuredWorkspace.workspaceAccess.hasWorkspace) { %>
+            <div class="workspace-card__summary">
+              <div>
+                <strong><%= featuredWorkspace.name %></strong>
+                <p><%= featuredWorkspace.workspaceAccess.label || 'Remote IDE workspace configured for this project.' %></p>
+              </div>
+              <div class="workspace-card__meta">
+                <% if (featuredWorkspace.workspaceAccess.environment) { %>
+                  <span class="badge badge-neutral"><%= featuredWorkspace.workspaceAccess.environment %></span>
+                <% } %>
+                <% if (featuredWorkspace.workspaceAccess.statusLabel) { %>
+                  <span class="badge badge-neutral"><%= featuredWorkspace.workspaceAccess.statusLabel %></span>
+                <% } %>
+                <% if (featuredWorkspace.workspaceAccess.hostLabel) { %>
+                  <span class="badge badge-neutral"><%= featuredWorkspace.workspaceAccess.hostLabel %></span>
+                <% } %>
+              </div>
+            </div>
+
+            <div class="actions">
+              <a class="btn btn-primary" href="<%= featuredWorkspace.workspaceAccess.publicOpenUrl || featuredWorkspace.workspaceAccess.openUrl %>" target="_blank" rel="noopener noreferrer">Open workspace</a>
+              <a class="btn" href="/project/<%= featuredWorkspace.id %>">Project</a>
+              <% if (featuredWorkspace.workspaceAccess.publicPopoutUrl || featuredWorkspace.workspaceAccess.popoutUrl) { %>
+                <a class="btn" href="<%= featuredWorkspace.workspaceAccess.publicPopoutUrl || featuredWorkspace.workspaceAccess.popoutUrl %>" target="_blank" rel="noopener noreferrer">Pop out</a>
+              <% } %>
+            </div>
+
+            <% if (featuredWorkspace.workspaceAccess.canEmbed && (featuredWorkspace.workspaceAccess.publicEmbedUrl || featuredWorkspace.workspaceAccess.embedUrl)) { %>
+              <div class="workspace-frame-shell workspace-frame-shell--home">
+                <iframe
+                  class="workspace-frame"
+                  src="<%= featuredWorkspace.workspaceAccess.publicEmbedUrl || featuredWorkspace.workspaceAccess.embedUrl %>"
+                  title="<%= featuredWorkspace.name %> workspace"
+                  loading="lazy"
+                  referrerpolicy="no-referrer"
+                  allow="clipboard-read; clipboard-write; fullscreen"
+                ></iframe>
+              </div>
+              <div class="field__hint">If this frame is blocked, allow `frame-ancestors` for the portal origin on the workspace endpoint.</div>
+            <% } else { %>
+              <div class="empty-state empty-state--compact">
+                <strong>Embedding is disabled for this workspace.</strong>
+                <p>Use the project settings to add an embed URL or allow the workspace to be framed by this portal.</p>
+              </div>
+            <% } %>
+          <% } else { %>
+            <div class="empty-state">
+              <strong>No browser workspaces configured yet.</strong>
+              <p>Add a `workspace_url` per project to turn the dashboard into a code-server switcher.</p>
+            </div>
+          <% } %>
+        </article>
+
+        <article class="card workspace-card">
+          <div class="card__header">
+            <div>
+              <div class="eyebrow">Switcher</div>
+              <h2>Workspace endpoints</h2>
+            </div>
+            <span class="badge badge-neutral"><%= workspaceProjectsList.length %> configured</span>
+          </div>
+
+          <% if (workspaceProjectsList.length) { %>
+            <div class="workspace-launcher-list">
+              <% workspaceProjectsList.forEach(function(project) { %>
+                <div class="workspace-launcher">
+                  <div class="workspace-launcher__copy">
+                    <strong><%= project.name %></strong>
+                    <span><%= project.workspaceAccess.hostLabel || project.workspaceAccess.openUrl || 'workspace configured' %></span>
+                  </div>
+                  <div class="workspace-launcher__meta">
+                    <% if (project.workspaceAccess.environment) { %>
+                      <span class="badge badge-neutral"><%= project.workspaceAccess.environment %></span>
+                    <% } %>
+                    <% if (project.workspaceAccess.statusLabel) { %>
+                      <span class="badge badge-neutral"><%= project.workspaceAccess.statusLabel %></span>
+                    <% } %>
+                  </div>
+                  <div class="workspace-launcher__actions">
+                    <a class="btn btn-primary" href="<%= project.workspaceAccess.publicOpenUrl || project.workspaceAccess.openUrl %>" target="_blank" rel="noopener noreferrer">Open</a>
+                    <a class="btn" href="/project/<%= project.id %>">Project</a>
+                  </div>
+                </div>
+              <% }) %>
+            </div>
+          <% } else { %>
+            <div class="empty-state empty-state--compact">
+              <strong>No workspace routes yet.</strong>
+              <p>Configure per-project workspace URLs and the portal will list them here for fast browser switching.</p>
+            </div>
+          <% } %>
         </article>
       </section>
 

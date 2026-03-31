@@ -5,6 +5,7 @@ Vibez is:
 - A transport-first control surface for holepunched remote access and project isolation.
 
 What it provides:
+- Browser workspace orchestration for per-project code-server endpoints.
 - Project-scoped chat, control, and file-change history.
 - Pinned, recent, archived, and searchable project navigation.
 - Persistent project state and conversations across sessions.
@@ -32,6 +33,22 @@ What it provides:
 - EJS server-rendered UI
 - SQLite (via `better-sqlite3`)
 - Local filesystem namespaces per project
+
+## Browser workspaces
+
+The dashboard can now act as a portal for browser-hosted IDE sessions such as `code-server`.
+
+Per project, configure these fields in the **Settings** tab:
+
+- `workspace_url`: primary launch URL for the project IDE
+- `workspace_embed_url`: optional iframe URL if embedding uses a different route
+- `workspace_popout_url`: optional dedicated pop-out target
+- `workspace_provider`: display label such as `code-server`
+- `workspace_env_label`: short environment tag such as `dev` or `staging`
+- `workspace_status_label`: operator-managed state such as `warm` or `paused`
+- `workspace_embed_mode`: `auto` or `off`
+
+With those set, the home page exposes a workspace switcher and embedded preview, and each project overview page becomes a launch/embed surface for that workspace.
 
 ## Features implemented
 - Project list/home dashboard with status signals
@@ -85,6 +102,10 @@ npm install
 npm start
 # Clean restart with various host-specific parameters on port 1717
 pids=$(lsof -ti:1717); [ -n "$pids" ] && kill -TERM $pids; while lsof -ti:1717 >/dev/null; do sleep 0.2; done; nohup env APP_HOST=10.10.0.2 PORT=1717 BACKEND_BASE_URL=http://10.10.0.2:1717 NODE_ENV=production OPENCLAW_BIN=/home/tom/.nvm/versions/node/v24.12.0/bin/openclaw node src/app.js >/tmp/ops-dashboard.log 2>&1 &
+# Clean run code-server
+pkill -f 'code-server --bind-addr 127.0.0.1:18081' || true
+sleep 1
+setsid bash -lc 'unset VSCODE_IPC_HOOK_CLI; exec code-server --bind-addr 127.0.0.1:18081 /home/tom/code/ops-dashboard' >/tmp/code-server-ops-dashboard.log 2>&1 < /dev/null &
 ```
 
 ### OpenClaw integration
