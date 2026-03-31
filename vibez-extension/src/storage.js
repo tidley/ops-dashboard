@@ -1,9 +1,11 @@
-const { normalizeProjectPath } = require('./model');
+const { normalizeProjectPath, normalizeSortMode } = require('./model');
 
 const STORAGE_KEYS = {
   pinned: 'vibez.pinnedProjects',
   projects: 'vibez.projectState',
   pendingSwitch: 'vibez.pendingSwitch',
+  sortMode: 'vibez.projectSortMode',
+  archiveCollapsed: 'vibez.archiveCollapsed',
 };
 
 function readArray(context, key) {
@@ -72,6 +74,17 @@ async function touchProjectRecent(context, projectPath, patch = {}) {
   });
 }
 
+async function setProjectArchived(context, projectPath, archived) {
+  return updateProjectState(context, projectPath, {
+    archived: Boolean(archived),
+  });
+}
+
+async function toggleArchivedProject(context, projectPath) {
+  const current = getProjectState(context, projectPath);
+  return setProjectArchived(context, projectPath, !current.archived);
+}
+
 function getPendingSwitch(context) {
   const pending = context.globalState.get(STORAGE_KEYS.pendingSwitch, null);
   return pending && typeof pending === 'object' ? pending : null;
@@ -81,12 +94,34 @@ async function setPendingSwitch(context, payload) {
   await context.globalState.update(STORAGE_KEYS.pendingSwitch, payload || null);
 }
 
+function getProjectSortMode(context) {
+  return normalizeSortMode(context.globalState.get(STORAGE_KEYS.sortMode, 'name'));
+}
+
+async function setProjectSortMode(context, sortMode) {
+  await context.globalState.update(STORAGE_KEYS.sortMode, normalizeSortMode(sortMode));
+}
+
+function getArchiveCollapsed(context) {
+  return context.globalState.get(STORAGE_KEYS.archiveCollapsed, true) !== false;
+}
+
+async function setArchiveCollapsed(context, collapsed) {
+  await context.globalState.update(STORAGE_KEYS.archiveCollapsed, Boolean(collapsed));
+}
+
 module.exports = {
+  getArchiveCollapsed,
   getPendingSwitch,
   getPinnedProjects,
   getProjectState,
+  getProjectSortMode,
+  setArchiveCollapsed,
   setPendingSwitch,
+  setProjectArchived,
+  setProjectSortMode,
   togglePinnedProject,
+  toggleArchivedProject,
   touchProjectRecent,
   updateProjectState,
 };

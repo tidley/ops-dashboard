@@ -45,16 +45,36 @@
   function allProjects() {
     if (!state) return [];
     return []
+      .concat(state.groups.live || [])
       .concat(state.groups.pinned || [])
       .concat(state.groups.recents || [])
       .concat(state.groups.others || [])
+      .concat(state.groups.archived || [])
       .filter(function(project, index, list) {
         return list.findIndex(function(candidate) { return candidate.id === project.id; }) === index;
       });
   }
 
+  function visibleProjects() {
+    if (!state) return [];
+    var projects = []
+      .concat(state.groups.live || [])
+      .concat(state.groups.pinned || [])
+      .concat(state.groups.recents || [])
+      .concat(state.groups.others || []);
+    if (!state.archiveCollapsed) {
+      projects = projects.concat(state.groups.archived || []);
+    }
+    return projects.filter(function(project, index, list) {
+      return list.findIndex(function(candidate) { return candidate.id === project.id; }) === index;
+    });
+  }
+
   function selectedProject() {
-    var projects = allProjects();
+    var projects = visibleProjects();
+    if (!projects.length) {
+      projects = allProjects();
+    }
     return projects.find(function(project) { return project.id === selectedProjectId; }) || projects[0] || null;
   }
 
@@ -64,12 +84,18 @@
       selectedProjectId = current.id;
       return;
     }
-    var projects = allProjects();
+    var projects = visibleProjects();
+    if (!projects.length) {
+      projects = allProjects();
+    }
     selectedProjectId = projects.length ? projects[0].id : '';
   }
 
   function projectBadges(project) {
     var badges = [];
+    if (project.windowOpen) badges.push('<span class="badge badge--open">Open</span>');
+    if (project.activeTmuxSession) badges.push('<span class="badge badge--live">Live</span>');
+    if (project.archived) badges.push('<span class="badge">Archived</span>');
     if (project.dirtyCount) badges.push('<span class="badge badge--dirty">' + project.dirtyCount + ' dirty</span>');
     if (project.untrackedCount) badges.push('<span class="badge badge--dirty">' + project.untrackedCount + ' new</span>');
     if (project.ahead) badges.push('<span class="badge badge--ahead">+' + project.ahead + '</span>');
@@ -88,6 +114,9 @@
       : 'No recent commit';
     var selectedClass = project.id === selectedProjectId ? ' is-selected' : '';
     var pinClass = project.pinned ? ' is-active' : '';
+    var archiveLabel = project.archived ? 'Restore' : 'Archive';
+    var attachClass = project.activeTmuxSession ? ' row__action row__action--live' : ' row__action';
+    var switchClass = project.windowOpen ? ' row__action row__action--warm' : ' row__action';
 
     return '' +
       '<div class="row' + selectedClass + '">' +
@@ -105,8 +134,9 @@
         '<div class="badges">' + projectBadges(project) + '</div>' +
         '<div class="row__actions">' +
           '<button type="button" class="pin' + pinClass + '" data-pin-project="' + escapeHtml(project.path) + '" title="Toggle pin">★</button>' +
-          '<button type="button" class="row__action" data-attach-project="' + escapeHtml(project.path) + '">Attach</button>' +
-          '<button type="button" class="row__action row__action--primary" data-switch-project="' + escapeHtml(project.path) + '">Switch</button>' +
+          '<button type="button" class="row__action" data-archive-project="' + escapeHtml(project.path) + '">' + archiveLabel + '</button>' +
+          '<button type="button" class="' + attachClass + '" data-attach-project="' + escapeHtml(project.path) + '">Attach</button>' +
+          '<button type="button" class="' + switchClass + '" data-switch-project="' + escapeHtml(project.path) + '">Switch</button>' +
         '</div>' +
       '</div>';
   }
@@ -134,9 +164,10 @@
             '<p>' + escapeHtml(project.path) + '</p>' +
           '</div>' +
           '<div class="detail__actions">' +
-            '<button type="button" class="detail__button detail__button--primary" data-switch-project="' + escapeHtml(project.path) + '">Switch Workspace</button>' +
-            '<button type="button" class="detail__button" data-attach-project="' + escapeHtml(project.path) + '">Attach tmux Session</button>' +
+            '<button type="button" class="detail__button' + (project.windowOpen ? ' detail__button--warm' : '') + '" data-switch-project="' + escapeHtml(project.path) + '">Switch Workspace</button>' +
+            '<button type="button" class="detail__button' + (project.activeTmuxSession ? ' detail__button--live' : '') + '" data-attach-project="' + escapeHtml(project.path) + '">Attach tmux Session</button>' +
             '<button type="button" class="detail__button" data-pin-project="' + escapeHtml(project.path) + '">Toggle Pin</button>' +
+            '<button type="button" class="detail__button" data-archive-project="' + escapeHtml(project.path) + '">' + (project.archived ? 'Restore Project' : 'Archive Project') + '</button>' +
           '</div>' +
           '<section class="detail__section">' +
             '<h3>Workspace</h3>' +
@@ -145,6 +176,8 @@
               '<div class="detail__item"><strong>Last Opened</strong><span>' + escapeHtml(formatDate(project.lastOpenedAt || project.lastSwitchedAt)) + '</span></div>' +
               '<div class="detail__item"><strong>Branch</strong><span>' + escapeHtml(project.branch || 'Not a git repo') + '</span></div>' +
               '<div class="detail__item"><strong>tmux Session</strong><span>' + escapeHtml(project.tmuxSessionName || 'Disabled') + '</span></div>' +
+              '<div class="detail__item"><strong>tmux Status</strong><span>' + escapeHtml(project.activeTmuxSession ? 'Live' : 'Idle') + '</span></div>' +
+              '<div class="detail__item"><strong>Switch Status</strong><span>' + escapeHtml(project.windowOpen ? 'Warm' : 'Cold') + '</span></div>' +
             '</div>' +
           '</section>' +
           '<section class="detail__section">' +
@@ -180,6 +213,13 @@
                 '<div><h1>Vibez</h1><p>' + escapeHtml(state.codeDirectory || 'No code directory configured') + '</p></div>' +
               '</div>' +
               '<div class="actions">' +
+                '<label class="select-wrap">' +
+                  '<span class="select-wrap__label">Sort</span>' +
+                  '<select id="sort-mode-select" class="select">' +
+                    '<option value="name"' + (state.sortMode === 'name' ? ' selected' : '') + '>Name</option>' +
+                    '<option value="updated"' + (state.sortMode === 'updated' ? ' selected' : '') + '>Last Updated</option>' +
+                  '</select>' +
+                '</label>' +
                 '<button type="button" class="button" id="pick-dir-btn">Code Directory</button>' +
                 '<button type="button" class="button" id="refresh-btn">Refresh</button>' +
               '</div>' +
@@ -187,16 +227,28 @@
             '<div class="toolbar__bottom">' +
               '<div class="toolbar__search"><input id="search-input" class="search" type="search" placeholder="Search projects, paths, branches…" value="' + escapeHtml(search) + '" /></div>' +
               '<div class="stats">' +
-                '<div class="stat"><strong>' + escapeHtml(String(state.projectCount || 0)) + '</strong><span>Projects</span></div>' +
+              '<div class="stat"><strong>' + escapeHtml(String(state.projectCount || 0)) + '</strong><span>Projects</span></div>' +
+                '<div class="stat"><strong>' + escapeHtml(String(state.liveCount || 0)) + '</strong><span>Live</span></div>' +
                 '<div class="stat"><strong>' + escapeHtml(String(state.pinnedCount || 0)) + '</strong><span>Pinned</span></div>' +
                 '<div class="stat"><strong>' + escapeHtml(String(state.recentCount || 0)) + '</strong><span>Recent</span></div>' +
+                '<div class="stat"><strong>' + escapeHtml(String(state.archivedCount || 0)) + '</strong><span>Archived</span></div>' +
+                '<div class="stat"><strong>' + escapeHtml(String(state.liveWindowCount || 0)) + '</strong><span>Open Windows</span></div>' +
               '</div>' +
             '</div>' +
           '</div>' +
           '<div class="groups">' +
+            renderGroup('Live', state.groups.live || []) +
             renderGroup('Pinned', state.groups.pinned || []) +
             renderGroup('Recent', state.groups.recents || []) +
             renderGroup('Projects', state.groups.others || []) +
+            ((state.groups.archived || []).length
+              ? '<section class="group group--archive">' +
+                  '<button type="button" class="group__header group__header--toggle" id="archive-toggle-btn">' +
+                    '<span>Archive</span><span>' + escapeHtml(String((state.groups.archived || []).length)) + (state.archiveCollapsed ? ' ▸' : ' ▾') + '</span>' +
+                  '</button>' +
+                  (state.archiveCollapsed ? '' : '<div class="table">' + filterProjects(state.groups.archived || []).map(renderRow).join('') + '</div>') +
+                '</section>'
+              : '') +
           '</div>' +
         '</main>' +
         renderDetail(selected) +
@@ -220,6 +272,20 @@
     var pickDirBtn = byId('pick-dir-btn');
     if (pickDirBtn) pickDirBtn.addEventListener('click', function() { send({ type: 'pickCodeDirectory' }); });
 
+    var sortModeSelect = byId('sort-mode-select');
+    if (sortModeSelect) {
+      sortModeSelect.addEventListener('change', function(event) {
+        send({ type: 'setSortMode', sortMode: event.target.value || 'name' });
+      });
+    }
+
+    var archiveToggleBtn = byId('archive-toggle-btn');
+    if (archiveToggleBtn) {
+      archiveToggleBtn.addEventListener('click', function() {
+        send({ type: 'setArchiveCollapsed', collapsed: !state.archiveCollapsed });
+      });
+    }
+
     Array.prototype.slice.call(document.querySelectorAll('[data-select-project]')).forEach(function(button) {
       button.addEventListener('click', function() {
         selectedProjectId = button.getAttribute('data-select-project') || '';
@@ -230,6 +296,12 @@
     Array.prototype.slice.call(document.querySelectorAll('[data-pin-project]')).forEach(function(button) {
       button.addEventListener('click', function() {
         send({ type: 'togglePin', projectPath: button.getAttribute('data-pin-project') || '' });
+      });
+    });
+
+    Array.prototype.slice.call(document.querySelectorAll('[data-archive-project]')).forEach(function(button) {
+      button.addEventListener('click', function() {
+        send({ type: 'toggleArchived', projectPath: button.getAttribute('data-archive-project') || '' });
       });
     });
 

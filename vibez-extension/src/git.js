@@ -78,12 +78,13 @@ async function collectGitMetadata(projectPath) {
       lastCommitShortHash: '',
       lastCommitSubject: '',
       lastCommitRelative: '',
+      lastCommitAt: '',
     };
   }
 
   const [status, commit] = await Promise.all([
     execFileAsync('git', ['-C', resolvedPath, 'status', '--porcelain=1', '--branch']),
-    execFileAsync('git', ['-C', resolvedPath, 'log', '-1', '--pretty=format:%h%x09%s%x09%cr']),
+    execFileAsync('git', ['-C', resolvedPath, 'log', '-1', '--pretty=format:%h%x09%s%x09%cr%x09%cI']),
   ]);
 
   const parsedStatus = parseGitStatusSummary(status.stdout);
@@ -101,6 +102,7 @@ async function collectGitMetadata(projectPath) {
     lastCommitShortHash: commitParts[0] || '',
     lastCommitSubject: commitParts[1] || '',
     lastCommitRelative: commitParts[2] || '',
+    lastCommitAt: commitParts[3] || '',
   };
 }
 

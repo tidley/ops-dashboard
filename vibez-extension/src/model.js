@@ -26,7 +26,7 @@ function sanitizeSlug(value, fallback = 'project', limit = 24) {
 
 function buildTmuxSessionName(projectPath, prefix = 'vibez') {
   const resolved = normalizeProjectPath(projectPath);
-  const baseName = sanitizeSlug(path.basename(resolved || ''), 'project', 24);
+  const baseName = sanitizeSlug(path.basename(resolved || ''), 'project', 10);
   const cleanPrefix = sanitizeSlug(prefix, 'vibez', 12);
   const suffix = makeProjectId(resolved).slice(0, 8);
   return `${cleanPrefix}-${baseName}-${suffix}`;
@@ -41,6 +41,15 @@ function sortByRecentActivity(projects) {
   return projects.slice().sort((left, right) => {
     const leftTime = Math.max(toTimestamp(left.lastOpenedAt), toTimestamp(left.lastSwitchedAt));
     const rightTime = Math.max(toTimestamp(right.lastOpenedAt), toTimestamp(right.lastSwitchedAt));
+    if (leftTime !== rightTime) return rightTime - leftTime;
+    return `${left.name || ''}`.localeCompare(`${right.name || ''}`);
+  });
+}
+
+function sortByLastUpdated(projects) {
+  return projects.slice().sort((left, right) => {
+    const leftTime = toTimestamp(left.lastUpdatedAt || left.lastCommitAt || left.lastOpenedAt || left.lastSwitchedAt);
+    const rightTime = toTimestamp(right.lastUpdatedAt || right.lastCommitAt || right.lastOpenedAt || right.lastSwitchedAt);
     if (leftTime !== rightTime) return rightTime - leftTime;
     return `${left.name || ''}`.localeCompare(`${right.name || ''}`);
   });
@@ -68,28 +77,46 @@ function matchesSearch(project, rawSearch) {
   return haystack.includes(search);
 }
 
+function normalizeSortMode(value) {
+  return String(value || '').trim().toLowerCase() === 'updated' ? 'updated' : 'name';
+}
+
 function groupProjects(projects, options = {}) {
   const recentLimit = Math.max(1, Number(options.recentLimit) || 8);
+  const sortMode = normalizeSortMode(options.sortMode);
+  const sectionSorter = sortMode === 'updated' ? sortByLastUpdated : sortAlphabetically;
   const filtered = Array.isArray(projects)
     ? projects.filter(project => matchesSearch(project, options.search))
     : [];
+  const activeProjects = filtered.filter(project => !project.archived);
+  const archivedProjects = filtered.filter(project => project.archived);
+  const live = sectionSorter(activeProjects.filter(project => project.activeTmuxSession));
 
-  const pinned = sortByRecentActivity(filtered.filter(project => project.pinned));
+  const pinned = sectionSorter(activeProjects.filter(project => project.pinned && !project.activeTmuxSession));
   const recents = sortByRecentActivity(
-    filtered.filter(project => !project.pinned && (project.lastOpenedAt || project.lastSwitchedAt)),
+    activeProjects.filter(project => (
+      !project.pinned
+      && !project.activeTmuxSession
+      && (project.lastOpenedAt || project.lastSwitchedAt)
+    )),
   ).slice(0, recentLimit);
 
   const excluded = new Set([
+    ...live.map(project => project.id),
     ...pinned.map(project => project.id),
     ...recents.map(project => project.id),
   ]);
 
-  const others = sortAlphabetically(filtered.filter(project => !excluded.has(project.id)));
+  const others = sectionSorter(activeProjects.filter(project => !excluded.has(project.id)));
+  const archived = sectionSorter(archivedProjects);
 
   return {
+    live,
     pinned,
     recents,
     others,
+    archived,
+    sortMode,
     filteredCount: filtered.length,
     totalCount: Array.isArray(projects) ? projects.length : 0,
   };
@@ -108,6 +135,12 @@ function buildProjectRecord({
   const relativePath = resolvedRoot && resolvedPath.startsWith(`${resolvedRoot}${path.sep}`)
     ? path.relative(resolvedRoot, resolvedPath)
     : path.basename(resolvedPath);
+  const lastOpenedAt = metadata.lastOpenedAt || '';
+  const lastSwitchedAt = metadata.lastSwitchedAt || '';
+  const lastCommitAt = git.lastCommitAt || '';
+  const lastUpdatedAt = [lastCommitAt, lastOpenedAt, lastSwitchedAt]
+    .map(toTimestamp)
+    .reduce((max, value) => Math.max(max, value), 0);
 
   return {
     id: makeProjectId(resolvedPath),
@@ -122,11 +155,16 @@ function buildProjectRecord({
     lastCommitSubject: git.lastCommitSubject || '',
     lastCommitRelative: git.lastCommitRelative || '',
     lastCommitShortHash: git.lastCommitShortHash || '',
+    lastCommitAt,
+    lastUpdatedAt: lastUpdatedAt ? new Date(lastUpdatedAt).toISOString() : '',
     isGitRepo: Boolean(git.isGitRepo),
     pinned: Boolean(pinned),
+    archived: Boolean(metadata.archived),
     current: normalizeProjectPath(currentWorkspacePath) === resolvedPath,
-    lastOpenedAt: metadata.lastOpenedAt || '',
-    lastSwitchedAt: metadata.lastSwitchedAt || '',
+    windowOpen: Boolean(metadata.windowOpen),
+    activeTmuxSession: Boolean(metadata.activeTmuxSession),
+    lastOpenedAt,
+    lastSwitchedAt,
     switchCount: Number(metadata.switchCount || 0),
     tmuxSessionName: metadata.tmuxSessionName || '',
     tmuxAttachedAt: metadata.tmuxAttachedAt || '',
@@ -139,7 +177,9 @@ module.exports = {
   buildTmuxSessionName,
   groupProjects,
   makeProjectId,
+  normalizeSortMode,
   normalizeProjectPath,
   sortAlphabetically,
+  sortByLastUpdated,
   sortByRecentActivity,
 };

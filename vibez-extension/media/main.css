@@ -84,10 +84,22 @@ body {
   flex-wrap: wrap;
 }
 
+.select-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 2px;
+}
+
+.select-wrap__label {
+  color: var(--vscode-descriptionForeground);
+}
+
 .button,
 .row__action,
 .detail__button,
-.pin {
+.pin,
+.select {
   border: 1px solid var(--vscode-button-border, var(--vscode-panel-border));
   background: var(--vscode-button-secondaryBackground, var(--vscode-editorWidget-background));
   color: var(--vscode-button-secondaryForeground, var(--vscode-editor-foreground));
@@ -100,7 +112,8 @@ body {
 .button:hover,
 .row__action:hover,
 .detail__button:hover,
-.pin:hover {
+.pin:hover,
+.select:hover {
   background: var(--vscode-button-secondaryHoverBackground, var(--vscode-list-hoverBackground));
 }
 
@@ -115,6 +128,24 @@ body {
 .row__action--primary:hover,
 .detail__button--primary:hover {
   background: var(--vscode-button-hoverBackground);
+}
+
+.row__action--live,
+.detail__button--live,
+.row__action--warm,
+.detail__button--warm {
+  border-color: var(--vscode-terminal-ansiGreen);
+  background: var(--vscode-terminal-ansiGreen);
+  color: #ffffff;
+}
+
+.row__action--live:hover,
+.detail__button--live:hover,
+.row__action--warm:hover,
+.detail__button--warm:hover {
+  border-color: color-mix(in srgb, var(--vscode-terminal-ansiGreen) 82%, black);
+  background: color-mix(in srgb, var(--vscode-terminal-ansiGreen) 82%, black);
+  color: #ffffff;
 }
 
 .toolbar__search {
@@ -172,6 +203,13 @@ body {
   font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.group__header--toggle {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
 }
 
 .table {
@@ -269,6 +307,15 @@ body {
   border: 1px solid var(--vscode-panel-border);
   color: var(--vscode-descriptionForeground);
   font-size: 11px;
+}
+
+.badge--open {
+  color: var(--vscode-terminal-ansiGreen);
+}
+
+.badge--live {
+  color: var(--vscode-terminal-ansiGreen);
+  border-color: color-mix(in srgb, var(--vscode-terminal-ansiGreen) 40%, var(--vscode-panel-border));
 }
 
 .badge--dirty {

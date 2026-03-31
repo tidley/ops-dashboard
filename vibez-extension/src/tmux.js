@@ -22,6 +22,33 @@ async function hasTmux() {
   return result.ok;
 }
 
+function parseTmuxSessionNames(rawValue) {
+  return new Set(
+    String(rawValue || '')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean),
+  );
+}
+
+async function listTmuxSessions() {
+  const result = await execFileAsync('tmux', ['list-sessions', '-F', '#{session_name}']);
+  if (result.ok) {
+    return { ok: true, sessions: parseTmuxSessionNames(result.stdout) };
+  }
+
+  const errorText = `${result.stderr}\n${result.error?.message || ''}`.toLowerCase();
+  if (errorText.includes('no server running') || errorText.includes('failed to connect to server')) {
+    return { ok: true, sessions: new Set() };
+  }
+
+  return {
+    ok: false,
+    error: result.stderr.trim() || result.error?.message || 'Unable to list tmux sessions',
+    sessions: new Set(),
+  };
+}
+
 async function ensureTmuxSession({ projectPath, sessionName, bootstrapCommand = '' }) {
   const sessionCheck = await execFileAsync('tmux', ['has-session', '-t', sessionName]);
   if (sessionCheck.ok) {
@@ -53,4 +80,6 @@ module.exports = {
   buildAttachCommand,
   ensureTmuxSession,
   hasTmux,
+  listTmuxSessions,
+  parseTmuxSessionNames,
 };

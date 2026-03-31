@@ -8,10 +8,15 @@ const {
   normalizeProjectPath,
 } = require('./model');
 const {
+  getArchiveCollapsed,
   getPendingSwitch,
   getPinnedProjects,
   getProjectState,
+  getProjectSortMode,
+  setArchiveCollapsed,
   setPendingSwitch,
+  setProjectSortMode,
+  toggleArchivedProject,
   togglePinnedProject,
   touchProjectRecent,
   updateProjectState,
@@ -20,7 +25,16 @@ const {
   buildAttachCommand,
   ensureTmuxSession,
   hasTmux,
+  listTmuxSessions,
 } = require('./tmux');
+const {
+  buildCodeLaunchArgs,
+  clearWindowAlive,
+  getLiveWindowForProject,
+  launchCodeWindow,
+  listLiveWindows,
+  markWindowAlive,
+} = require('./windows');
 
 function expandHomeDir(filePath) {
   const value = String(filePath || '').trim();
@@ -41,6 +55,13 @@ function getCurrentWorkspacePath() {
 
 function getShellPath() {
   return process.env.SHELL || '/bin/bash';
+}
+
+function getProjectTmuxSessionName(projectPath) {
+  return buildTmuxSessionName(
+    projectPath,
+    getConfiguration().get('tmux.sessionPrefix', 'vibez'),
+  );
 }
 
 class VibezPanel {
@@ -116,6 +137,8 @@ class VibezPanel {
 class VibezController {
   constructor(context) {
     this.context = context;
+    this.windowSessionId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    this.windowHeartbeatTimer = null;
     this.panel = new VibezPanel(context.extensionUri, (message) => this.handleMessage(message));
     this.statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50);
     this.statusBarItem.text = '$(repo) Vibez';
@@ -126,7 +149,46 @@ class VibezController {
   }
 
   async activate() {
+    await this.startWindowHeartbeat();
     await this.restorePendingProjectTerminal();
+  }
+
+  getWindowMode() {
+    const configured = String(getConfiguration().get('windowMode', 'single-window') || '').trim().toLowerCase();
+    return configured === 'single-window' ? 'single-window' : 'multi-window';
+  }
+
+  async startWindowHeartbeat() {
+    await this.updateWindowPresence();
+    if (this.windowHeartbeatTimer) clearInterval(this.windowHeartbeatTimer);
+    this.windowHeartbeatTimer = setInterval(() => {
+      this.updateWindowPresence();
+    }, 10000);
+    this.context.subscriptions.push({
+      dispose: () => {
+        if (this.windowHeartbeatTimer) {
+          clearInterval(this.windowHeartbeatTimer);
+          this.windowHeartbeatTimer = null;
+        }
+        this.updateWindowPresence(true);
+      },
+    });
+  }
+
+  async updateWindowPresence(clear) {
+    const projectPath = getCurrentWorkspacePath();
+    if (!projectPath) return;
+    if (clear) {
+      await clearWindowAlive(this.context, {
+        projectPath,
+        windowSessionId: this.windowSessionId,
+      });
+      return;
+    }
+    await markWindowAlive(this.context, {
+      projectPath,
+      windowSessionId: this.windowSessionId,
+    });
   }
 
   async resolveCodeDirectory() {
@@ -138,7 +200,15 @@ class VibezController {
     const codeDirectory = await this.resolveCodeDirectory();
     const currentWorkspacePath = getCurrentWorkspacePath();
     const pinnedProjects = getPinnedProjects(this.context);
+    const sortMode = getProjectSortMode(this.context);
+    const archiveCollapsed = getArchiveCollapsed(this.context);
+    const liveWindows = listLiveWindows(this.context);
+    const liveWindowSet = new Set(liveWindows.map((entry) => normalizeProjectPath(entry.projectPath)));
     const projectPaths = await listProjectDirectories(codeDirectory);
+    const tmuxSessions = getConfiguration().get('tmux.enabled', true)
+      ? await listTmuxSessions()
+      : { ok: true, sessions: new Set() };
+    const liveTmuxSessions = tmuxSessions.ok ? tmuxSessions.sessions : new Set();
 
     const projects = await Promise.all(projectPaths.map(async (projectPath) => {
       const [git, metadata] = await Promise.all([
@@ -151,7 +221,9 @@ class VibezController {
         rootPath: codeDirectory,
         metadata: {
           ...metadata,
-          tmuxSessionName: metadata.tmuxSessionName || buildTmuxSessionName(projectPath, getConfiguration().get('tmux.sessionPrefix', 'vibez')),
+          tmuxSessionName: getProjectTmuxSessionName(projectPath),
+          activeTmuxSession: liveTmuxSessions.has(getProjectTmuxSessionName(projectPath)),
+          windowOpen: liveWindowSet.has(normalizeProjectPath(projectPath)),
         },
         git,
         pinned: pinnedProjects.has(normalizeProjectPath(projectPath)),
@@ -161,20 +233,27 @@ class VibezController {
 
     const grouped = groupProjects(projects, {
       recentLimit: getConfiguration().get('recentLimit', 8),
+      sortMode,
     });
 
     return {
       codeDirectory,
       hasCodeDirectory: Boolean(codeDirectory),
       currentWorkspacePath,
+      windowMode: this.getWindowMode(),
+      sortMode,
+      archiveCollapsed,
       tmuxEnabled: Boolean(getConfiguration().get('tmux.enabled', true)),
       reuseWindow: Boolean(getConfiguration().get('switch.reuseWindow', true)),
       restoreTerminal: Boolean(getConfiguration().get('switch.restoreTerminal', true)),
       bootstrapCommand: String(getConfiguration().get('tmux.bootstrapCommand', 'codex') || ''),
       groups: grouped,
       projectCount: projects.length,
+      liveCount: grouped.live.length,
       pinnedCount: grouped.pinned.length,
       recentCount: grouped.recents.length,
+      archivedCount: grouped.archived.length,
+      liveWindowCount: liveWindows.length,
     };
   }
 
@@ -205,6 +284,7 @@ class VibezController {
   async pickProjectQuick() {
     const state = await this.loadProjects();
     const ordered = [
+      ...state.groups.live,
       ...state.groups.pinned,
       ...state.groups.recents.filter(project => !state.groups.pinned.some(pinned => pinned.id === project.id)),
       ...state.groups.others,
@@ -259,7 +339,7 @@ class VibezController {
   }
 
   attachProjectTerminal(projectPath, tmuxSessionName) {
-    const sessionName = tmuxSessionName || buildTmuxSessionName(projectPath, getConfiguration().get('tmux.sessionPrefix', 'vibez'));
+    const sessionName = tmuxSessionName || getProjectTmuxSessionName(projectPath);
     const command = buildAttachCommand({ projectPath, sessionName });
     const terminal = vscode.window.createTerminal({
       name: `Vibez · ${path.basename(projectPath)}`,
@@ -271,8 +351,14 @@ class VibezController {
     return sessionName;
   }
 
+  async launchProjectWindow(projectPath, options = {}) {
+    const cliPath = String(getConfiguration().get('windowCliPath', 'code') || 'code').trim() || 'code';
+    return launchCodeWindow(cliPath, projectPath, options);
+  }
+
   async switchProject(projectPath, options = {}) {
     const resolvedPath = normalizeProjectPath(projectPath);
+    const windowMode = options.windowMode || this.getWindowMode();
     const reuseWindow = options.reuseWindow !== undefined
       ? Boolean(options.reuseWindow)
       : Boolean(getConfiguration().get('switch.reuseWindow', true));
@@ -286,18 +372,32 @@ class VibezController {
       vscode.window.showWarningMessage(`Vibez could not prepare tmux for ${path.basename(resolvedPath)}: ${tmuxState.error}`);
     }
 
-    const recentState = await touchProjectRecent(this.context, resolvedPath, {
-      tmuxSessionName: tmuxState.tmuxSessionName || '',
+    await touchProjectRecent(this.context, resolvedPath, {
+      tmuxSessionName: tmuxState.tmuxSessionName || getProjectTmuxSessionName(resolvedPath),
     });
 
     await setPendingSwitch(this.context, {
       projectPath: resolvedPath,
       requestedAt: new Date().toISOString(),
       restoreTerminal: canRestoreTerminal,
-      tmuxSessionName: tmuxState.tmuxSessionName || recentState.tmuxSessionName || '',
+      tmuxSessionName: getProjectTmuxSessionName(resolvedPath),
+      windowMode,
     });
 
-    await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(resolvedPath), !reuseWindow);
+    if (windowMode === 'single-window') {
+      await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(resolvedPath), !reuseWindow);
+      return;
+    }
+
+    const existingWindow = getLiveWindowForProject(this.context, resolvedPath);
+    const launch = await this.launchProjectWindow(resolvedPath, {
+      newWindow: !existingWindow,
+      reuseWindow: false,
+    });
+    if (!launch.ok) {
+      const detail = launch.stderr || launch.error?.message || 'unable to launch VS Code window';
+      vscode.window.showErrorMessage(`Vibez could not open ${path.basename(resolvedPath)} in multi-window mode: ${detail}`);
+    }
   }
 
   async restorePendingProjectTerminal() {
@@ -314,7 +414,7 @@ class VibezController {
     const ageMs = Date.now() - new Date(pending.requestedAt || 0).getTime();
     if (!Number.isFinite(ageMs) || ageMs > 5 * 60 * 1000) return;
 
-    const tmuxSessionName = pending.tmuxSessionName || buildTmuxSessionName(currentWorkspacePath, getConfiguration().get('tmux.sessionPrefix', 'vibez'));
+    const tmuxSessionName = getProjectTmuxSessionName(currentWorkspacePath);
     this.attachProjectTerminal(currentWorkspacePath, tmuxSessionName);
     await updateProjectState(this.context, currentWorkspacePath, {
       tmuxSessionName,
@@ -337,10 +437,26 @@ class VibezController {
       await this.refreshPanel();
       return;
     }
+    if (type === 'toggleArchived') {
+      await toggleArchivedProject(this.context, message.projectPath);
+      await this.refreshPanel();
+      return;
+    }
+    if (type === 'setSortMode') {
+      await setProjectSortMode(this.context, message.sortMode);
+      await this.refreshPanel();
+      return;
+    }
+    if (type === 'setArchiveCollapsed') {
+      await setArchiveCollapsed(this.context, message.collapsed);
+      await this.refreshPanel();
+      return;
+    }
     if (type === 'switchProject') {
       await this.switchProject(message.projectPath, {
         reuseWindow: message.reuseWindow,
         restoreTerminal: message.restoreTerminal,
+        windowMode: message.windowMode,
       });
       return;
     }
@@ -352,7 +468,7 @@ class VibezController {
       }
       this.attachProjectTerminal(message.projectPath, tmuxState.tmuxSessionName);
       await updateProjectState(this.context, message.projectPath, {
-        tmuxSessionName: tmuxState.tmuxSessionName,
+        tmuxSessionName: getProjectTmuxSessionName(message.projectPath),
         tmuxAttachedAt: new Date().toISOString(),
       });
       await this.refreshPanel();
@@ -377,10 +493,14 @@ function activate(context) {
         vscode.window.showErrorMessage(`Vibez could not prepare tmux: ${tmuxState.error}`);
         return;
       }
-      controller.attachProjectTerminal(currentWorkspacePath, tmuxState.tmuxSessionName);
+      controller.attachProjectTerminal(currentWorkspacePath, getProjectTmuxSessionName(currentWorkspacePath));
     }),
     vscode.workspace.onDidChangeConfiguration(async (event) => {
       if (!event.affectsConfiguration('vibez')) return;
+      await controller.refreshPanel();
+    }),
+    vscode.workspace.onDidChangeWorkspaceFolders(async () => {
+      await controller.updateWindowPresence();
       await controller.refreshPanel();
     }),
   );
@@ -392,5 +512,6 @@ function deactivate() {}
 
 module.exports = {
   activate,
+  buildCodeLaunchArgs,
   deactivate,
 };

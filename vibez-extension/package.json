@@ -11,7 +11,7 @@
   "categories": [
     "Other"
   ],
-  "icon": "media/vibez.svg",
+  "icon": "media/vibez.png",
   "main": "./src/extension.js",
   "activationEvents": [
     "onStartupFinished",
@@ -54,6 +54,17 @@
           "maximum": 20,
           "description": "Maximum number of recent projects shown ahead of the main list."
         },
+        "vibez.windowMode": {
+          "type": "string",
+          "enum": ["multi-window", "single-window"],
+          "default": "single-window",
+          "description": "Reuse the current VS Code window when switching projects, or keep projects warm in separate windows."
+        },
+        "vibez.windowCliPath": {
+          "type": "string",
+          "default": "code",
+          "description": "VS Code CLI executable used to open and reactivate project windows in multi-window mode."
+        },
         "vibez.tmux.enabled": {
           "type": "boolean",
           "default": true,
@@ -83,6 +94,6 @@
     }
   },
   "scripts": {
-    "lint": "node --check src/model.js && node --check src/git.js && node --check src/storage.js && node --check src/tmux.js && node --check src/extension.js"
+    "lint": "node --check src/model.js && node --check src/git.js && node --check src/storage.js && node --check src/tmux.js && node --check src/windows.js && node --check src/extension.js"
   }
 }
